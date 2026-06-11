@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:karate-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+app:
+  cors:
+    allowed-origins: http://localhost:5173
+  security:
+    enabled: false
+    jwt:
+      secret: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVm
+      expires-minutes: 480
+    seed-admin:
+      email: admin@test.local
+      password: Admin@123456
+      display-name: Test Admin

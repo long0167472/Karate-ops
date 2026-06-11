@@ -1,0 +1,21 @@
+# graphify - generated knowledge graph (rebuild with /graphify .)
+graphify-out/
+.graphify_*
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# logs
+*.log

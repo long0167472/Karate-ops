@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: karate-tournament-postgres
+    environment:
+      POSTGRES_DB: karate_tournament
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123456
+    ports:
+      - "5432:5432"
+    volumes:
+      - karate_tournament_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d karate_tournament"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  karate_tournament_pg:

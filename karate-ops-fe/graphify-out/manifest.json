@@ -1,0 +1,78 @@
+{
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\server.js": {
+    "mtime": 1780973689.2935836,
+    "hash": "807910d27ab45f72807e79d00a0b715d"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\vite.config.ts": {
+    "mtime": 1780973685.600408,
+    "hash": "8cc70c4381d629da3be6ca19b5566285"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\apiClient.ts": {
+    "mtime": 1781010337.423284,
+    "hash": "68af13223073dae0e43e3c2e880c61b4"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\App.tsx": {
+    "mtime": 1781062305.2245772,
+    "hash": "47684dde17986e618c8b904de6d90d5a"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\ClubManagementPage.tsx": {
+    "mtime": 1781062330.5136988,
+    "hash": "12f9113cea46c89eceadb99e4a025522"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\main.tsx": {
+    "mtime": 1780912520.4640436,
+    "hash": "fc1cfacc070f64e7380401cae205e22d"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\types.ts": {
+    "mtime": 1781061716.4697695,
+    "hash": "41d5150c53755e31ef2264218227dda0"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\useScoreboard.ts": {
+    "mtime": 1781010190.9918628,
+    "hash": "0424823bc61c2fc3f61712884060cd71"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\utils.ts": {
+    "mtime": 1780912517.766627,
+    "hash": "646e71ed3a776c372c62668711403209"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\vite-env.d.ts": {
+    "mtime": 1780974046.587735,
+    "hash": "0352474ba2918efe13895edbc3780d94"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\features\\clubs\\clubApi.ts": {
+    "mtime": 1781061716.471769,
+    "hash": "7f8dc09deffc536731a0e62bb5110d24"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\features\\clubs\\clubConstants.ts": {
+    "mtime": 1780998210.4592557,
+    "hash": "870b618d6f77a3e523a2e644016f981f"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\features\\clubs\\clubUtils.ts": {
+    "mtime": 1780993059.4230678,
+    "hash": "38603a240211f5ad30ace77d5e060ea2"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\features\\clubs\\components\\AttendanceTab.tsx": {
+    "mtime": 1781010236.7456415,
+    "hash": "0853a587c109d5a08e15650fa1d60ca9"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\features\\clubs\\components\\FeesTab.tsx": {
+    "mtime": 1781010238.224141,
+    "hash": "b65ef8c800f216dde5381652c1dd64b7"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\src\\features\\clubs\\components\\MembersTab.tsx": {
+    "mtime": 1781062019.8713078,
+    "hash": "a64c41eedda5f92445421b8696fd16bb"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\DESIGN.md": {
+    "mtime": 1781012974.5333514,
+    "hash": "c7ad602015d379d57ca4452b5b132d7b"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\index.html": {
+    "mtime": 1780973684.0463305,
+    "hash": "7a6952c98635f254ec257ed8dda00178"
+  },
+  "C:\\Users\\hoang\\OneDrive\\M\u00e1y t\u00ednh\\code\\karate-ops-fe\\README.md": {
+    "mtime": 1781014680.4477203,
+    "hash": "ad85f84cb1aea32db04542f4ff19893a"
+  }
+}
