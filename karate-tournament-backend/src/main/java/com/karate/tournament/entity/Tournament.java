@@ -19,7 +19,9 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.math.BigDecimal;
 
 @Getter
 @Setter
@@ -84,4 +86,19 @@ public class Tournament extends BaseEntity {
 
   @Column(name = "rule_snapshot_json", columnDefinition = "text")
   public String ruleSnapshotJson;
+
+  @Column(name = "registration_deadline")
+  public Instant registrationDeadline;
+
+  @Column(name = "registration_fee", precision = 12, scale = 2)
+  public BigDecimal registrationFee = BigDecimal.ZERO;
+
+  @Column(nullable = false)
+  public short step = 0;
+
+  @Column(name = "phong_trao_enabled", nullable = false)
+  public boolean phongTraoEnabled = true;
+
+  @Column(name = "nang_cao_enabled", nullable = false)
+  public boolean nangCaoEnabled = true;
 }

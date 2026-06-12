@@ -45,4 +45,11 @@ public class TournamentParticipant extends BaseEntity {
 
   @Column(name = "approved_at")
   public Instant approvedAt;
+
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "approved_by_user_id")
+  public AppUser approvedBy;
+
+  @Column(name = "inactivated_at")
+  public Instant inactivatedAt;
 }

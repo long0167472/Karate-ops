@@ -237,7 +237,12 @@ public class ApiMapper {
         tournament.ruleSnapshotJson,
         tournament.ownerOrganization == null ? null : tournament.ownerOrganization.id,
         tournament.ownerOrganization == null ? null : tournament.ownerOrganization.name,
-        tournament.createdByUser == null ? null : tournament.createdByUser.id
+        tournament.createdByUser == null ? null : tournament.createdByUser.id,
+        tournament.step,
+        tournament.phongTraoEnabled,
+        tournament.nangCaoEnabled,
+        tournament.registrationDeadline,
+        tournament.registrationFee
     );
   }
 

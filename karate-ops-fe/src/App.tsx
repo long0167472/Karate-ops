@@ -41,6 +41,15 @@ import {
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import ClubManagementPage from "./ClubManagementPage";
+import { PublicTournamentListPage } from "./PublicTournamentListPage";
+import { TournamentManagePage } from "./TournamentManagePage";
+import { TournamentPublicDetailPage } from "./TournamentPublicDetailPage";
+import TournamentStandingsPage from "./TournamentStandingsPage";
+import { DisplayView, OverlayView, ScoreboardFrame as SpectatorScoreboard } from "./scoreboard";
+import { OperationsHub } from "./OperationsHub";
+import { Homepage } from "./components/Homepage";
+import "./tournament-styles.css";
+import { NotificationBell } from "./NotificationBell";
 import { apiDelete, apiGet, apiPatch, apiPost, getAuthToken, setAuthToken } from "./apiClient";
 import { useScoreboard } from "./useScoreboard";
 import type {
@@ -139,18 +148,42 @@ export default function App() {
   if (route.includes("dashboard/clubs")) return <ClubDashboardRedirect user={effectiveUser!} />;
   if (route.includes("dashboard/tournaments")) return <TournamentDashboardPage user={effectiveUser!} />;
   if (route.includes("clubs")) return <ClubManagementPage user={effectiveUser!} />;
+  if (route === "/tournaments/public") return <PublicTournamentListPage />;
+  {
+    const standingsMatch = /^\/standings\/tournaments\/([^/]+)/.exec(route);
+    if (standingsMatch) {
+      const tournamentId = standingsMatch[1];
+      return <TournamentStandingsPage tournamentId={tournamentId} />;
+    }
+  }
+  {
+    const manageMatch = /^\/tournaments\/([^/]+)\/manage/.exec(route);
+    if (manageMatch) {
+      const tournamentId = manageMatch[1];
+      return <TournamentManagePage tournamentId={tournamentId} />;
+    }
+  }
+  {
+    const detailMatch = /^\/tournaments\/([^/]+)$/.exec(route);
+    if (detailMatch) {
+      const tournamentId = detailMatch[1];
+      return <TournamentPublicDetailPage tournamentId={tournamentId} />;
+    }
+  }
   if (route.includes("tournaments")) return <TournamentManagementPage user={effectiveUser!} />;
   if (route.includes("app") || (!route.includes("display") && !route.includes("overlay") && !route.includes("judge") && !route.includes("control"))) {
     if (!effectiveUser) return <LoginRedirect />;
-    if (!canManageClub(effectiveUser) && !canManageTournament(effectiveUser)) {
-      return <MemberPortalPage user={effectiveUser} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} />;
+    // Admin / club manager / coach → danh sách CLB (global admin thấy toàn bộ, còn lại thấy CLB của mình).
+    // Thành viên thường → trang chủ cá nhân (Homepage).
+    if (canManageClub(effectiveUser)) {
+      return <ClubManagementPage user={effectiveUser} />;
     }
     return <HomePage connected={api.connection.connected} user={effectiveUser} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} />;
   }
   const tatamiApi = hasTatamiId ? api : manualApi;
   if (hasTatamiId && !api.match) return route.includes("control") && authUser ? <AssignMatchPage refresh={api.refresh} /> : <LoadingScreen connected={api.connection.connected} />;
-  if (route.includes("display")) return <DisplayPage payload={tatamiApi.payload!} />;
-  if (route.includes("overlay")) return <OverlayPage payload={tatamiApi.payload!} />;
+  if (route.includes("display")) return <DisplayView payload={tatamiApi.payload!} />;
+  if (route.includes("overlay")) return <OverlayView payload={tatamiApi.payload!} />;
   if (route.includes("judge")) return <JudgePage payload={tatamiApi.payload!} send={tatamiApi.send} />;
   if (route.includes("control")) return <ControlPage api={tatamiApi} />;
   return effectiveUser ? <HomePage connected={api.connection.connected} user={effectiveUser} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} /> : <LoginRedirect />;
@@ -646,115 +679,9 @@ function HomePage({
   viewAsRole: string;
   setViewAsRole: (role: string) => void;
 }) {
-  const [tournaments, setTournaments] = useState<TournamentResponse[]>([]);
-  const [tatamis, setTatamis] = useState<TatamiResponse[]>([]);
-  const [tournamentId, setTournamentId] = useState(() => window.localStorage.getItem(LAST_TOURNAMENT_KEY) || "");
-  const [tatamiId, setTatamiId] = useState(() => window.localStorage.getItem(LAST_TATAMI_KEY) || "");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    apiGet<TournamentResponse[]>("/api/tournaments")
-      .then((data) => {
-        setTournaments(data);
-        if (!tournamentId && data[0]) setTournamentId(data[0].id);
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
-  }, [tournamentId]);
-
-  useEffect(() => {
-    if (!tournamentId) return;
-    window.localStorage.setItem(LAST_TOURNAMENT_KEY, tournamentId);
-    apiGet<TatamiResponse[]>(`/api/tournaments/${tournamentId}/tatamis`)
-      .then((data) => {
-        setTatamis(data);
-        if (!data.some((tatami) => tatami.id === tatamiId)) setTatamiId(data[0]?.id || "");
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
-  }, [tatamiId, tournamentId]);
-
-  useEffect(() => {
-    if (tatamiId) window.localStorage.setItem(LAST_TATAMI_KEY, tatamiId);
-  }, [tatamiId]);
-
-  const query = tournamentId && tatamiId ? `?tournamentId=${tournamentId}&tatamiId=${tatamiId}` : "";
-  return (
-    <main className="app-hub-page">
-      <section className="app-hub-shell">
-        <motion.header className="app-hub-hero" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 110, damping: 22 }}>
-          <div>
-            <span className="landing-kicker">Operations hub</span>
-            <h1>Chào {user.displayName}, chọn luồng cần vận hành hôm nay.</h1>
-            <p>{user.roles.join(", ")}{user.primaryOrganizationName ? ` - ${user.primaryOrganizationName}` : ""}</p>
-          </div>
-          <div className="app-hub-status">
-            <ConnectionPill connected={connected} />
-            {hasRole(actualUser, "GLOBAL_ADMIN") ? (
-              <label className="view-as-select">
-                <span>View as</span>
-                <select value={viewAsRole} onChange={(event) => setViewAsRole(event.target.value)}>
-                  <option value="ACTUAL">Actual</option>
-                  <option value="GLOBAL_ADMIN">Global admin</option>
-                  <option value="CLUB_MANAGER">Admin CLB</option>
-                  <option value="MEMBER">Member</option>
-                </select>
-              </label>
-            ) : null}
-            <button className="app-hub-logout" onClick={() => {
-              setAuthToken(null);
-              window.location.href = "/";
-            }}>Đăng xuất</button>
-          </div>
-        </motion.header>
-
-        <section className="app-hub-selector">
-          <div>
-            <span className="landing-kicker">Tatami selector</span>
-            <h2>Khóa đúng giải và sàn trước khi mở control, display hoặc judge.</h2>
-          </div>
-          <div className="app-hub-select-grid">
-            <label className="field">
-              <span>Tournament</span>
-              <select value={tournamentId} onChange={(event) => setTournamentId(event.target.value)}>
-                {tournaments.length === 0 ? <option value="">Chưa có giải đấu</option> : null}
-                {tournaments.map((tournament) => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              <span>Tatami</span>
-              <select value={tatamiId} onChange={(event) => setTatamiId(event.target.value)}>
-                {tatamis.length === 0 ? <option value="">Chưa có tatami</option> : null}
-                {tatamis.map((tatami) => <option key={tatami.id} value={tatami.id}>{tatami.name || `Tatami ${tatami.tatamiNo}`}</option>)}
-              </select>
-            </label>
-          </div>
-          {error ? <p className="error-text">{error}</p> : null}
-        </section>
-
-        <section className="app-hub-grid">
-          <HomeLink href="/member" icon={<Users />} title="Member Portal" text="Xem hồ sơ của mình, học phí, chuyên cần và gửi request xin nghỉ." />
-          <HomeLink href="/clubs" icon={<Activity />} title="Không gian CLB" text="Quản lý thành viên, roster, học phí, chuyên cần và dashboard ngay trong workspace." disabled={!canManageClub(user)} />
-          <HomeLink href={user.primaryOrganizationId ? `/clubs/${user.primaryOrganizationId}?tab=overview` : "/clubs"} icon={<Shield />} title="Dashboard CLB" text="Mở tổng quan CLB đã gộp với cảnh báo, chuyên cần và readiness." disabled={!canManageClub(user) && !user.primaryOrganizationId} />
-          <HomeLink href="/tournaments" icon={<Trophy />} title="Tournament Admin" text="Tạo giải, duyệt đoàn, chia tatami, hạng cân và hồ sơ thi đấu." disabled={!canManageTournament(user)} />
-          <HomeLink href={tournamentId ? `/dashboard/tournaments/${tournamentId}` : "#"} icon={<History />} title="Tournament Dashboard" text="Theo dõi tổng quan giải, huy chương, tatami và trạng thái trận." disabled={!tournamentId} />
-          <HomeLink href={`/control${query}`} icon={<Gauge />} title="Control Desk" text="Bàn thư ký điều khiển điểm, đồng hồ, cảnh báo và preview." disabled={!query} />
-          <HomeLink href={`/display${query}`} icon={<Monitor />} title="Display" text="Bảng điểm fullscreen cho TV, màn chiếu hoặc LED tại sàn." disabled={!query} />
-          <HomeLink href={`/judge${query}`} icon={<Vote />} title="Judge Vote" text="Màn bỏ phiếu Kata cho trọng tài, nối trực tiếp vào trận hiện tại." disabled={!query} />
-          <HomeLink href={`/overlay${query}`} icon={<Eye />} title="OBS Overlay" text="Score strip nền trong suốt dành cho livestream và broadcast." disabled={!query} />
-        </section>
-      </section>
-    </main>
-  );
+  return <Homepage user={user} />;
 }
 
-function HomeLink({ href, icon, title, text, disabled }: { href: string; icon: React.ReactNode; title: string; text: string; disabled?: boolean }) {
-  return (
-    <a className={cx("home-link", disabled && "disabled")} href={disabled ? "#" : href}>
-      {icon}
-      <strong>{title}</strong>
-      <span>{text}</span>
-    </a>
-  );
-}
 
 function MemberPortalPage({
   user,
@@ -835,6 +762,7 @@ function MemberPortalPage({
                 </select>
               </label>
             ) : null}
+            <NotificationBell userId={actualUser.id} />
             <a className="app-hub-logout" href="/app">Hub</a>
             <button className="app-hub-logout" onClick={() => {
               setAuthToken(null);
@@ -1421,6 +1349,7 @@ function TournamentManagementPage({ user }: { user: AuthUserResponse }) {
             }, setBusy, setError)}>
               <Flag /> {selectedTournament?.status === "REGISTRATION_OPEN" ? "Về draft" : "Mở đăng ký"}
             </button>
+            <NotificationBell userId={user.id} />
             <button className="tournament-ghost-button" onClick={() => {
               setAuthToken(null);
               window.location.href = "/login";
@@ -2679,7 +2608,7 @@ function FloatingPreview({ payload, onClose }: { payload: StatePayload; onClose:
         </div>
       </div>
       <div className="floating-preview-board">
-        <ScoreboardFrame payload={payload} variant="preview" />
+        <SpectatorScoreboard payload={payload} variant="preview" />
       </div>
       <button disabled={pinned} className="floating-preview-resize" onPointerDown={startResize} title={pinned ? "Preview is pinned" : "Resize preview"} />
     </aside>

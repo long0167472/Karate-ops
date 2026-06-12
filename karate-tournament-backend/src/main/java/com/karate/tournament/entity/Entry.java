@@ -67,4 +67,11 @@ public class Entry extends BaseEntity {
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 40)
   public EntryStatus status = EntryStatus.REGISTERED;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "btc_approval_status", nullable = false, length = 40)
+  public com.karate.tournament.entity.enums.BtcApprovalStatus btcApprovalStatus = com.karate.tournament.entity.enums.BtcApprovalStatus.PENDING;
+
+  @Column(name = "tournament_points", nullable = false)
+  public int tournamentPoints = 0;
 }

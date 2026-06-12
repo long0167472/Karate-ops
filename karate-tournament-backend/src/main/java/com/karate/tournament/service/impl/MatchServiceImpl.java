@@ -3,6 +3,7 @@ package com.karate.tournament.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import com.karate.tournament.service.*;
+import com.karate.tournament.service.TournamentPointsService;
 import com.karate.tournament.exception.BadRequestException;
 import com.karate.tournament.exception.BusinessConflictException;
 import com.karate.tournament.exception.ResourceNotFoundException;
@@ -54,6 +55,7 @@ public class MatchServiceImpl implements MatchService {
   private final KumiteRuleEngine kumiteRules;
   private final ApiMapper mapper;
   private final RealtimePublisher realtimePublisher;
+  private final TournamentPointsService tournamentPointsService;
 
   @Transactional(readOnly = true)
   public List<MatchResponse> listByTournament(UUID tournamentId) {
@@ -111,6 +113,9 @@ public class MatchServiceImpl implements MatchService {
     saveResultEvent(match, request);
     advanceWinner(match, winnerEntry);
     advanceLoser(match, request.winnerSide());
+    if (match.roundNumber != null) {
+      tournamentPointsService.awardMatchPoints(match.id, winnerEntry.id, match.roundNumber);
+    }
     recordMedalsIfReady(match, winnerEntry, request.winnerSide());
     MatchResponse response = mapper.match(match);
     realtimePublisher.publishMatch(response);

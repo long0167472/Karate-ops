@@ -151,6 +151,48 @@ public class TournamentServiceImpl implements TournamentService {
     return mapper.participant(participant);
   }
 
+  @Transactional
+  public TournamentResponse advanceStep(UUID id) {
+    Tournament tournament = requireTournament(id);
+    permissions.requireTournamentManage(tournament);
+    if (tournament.step < 4) {
+      tournament.step++;
+      if (tournament.step == 4) {
+        tournament.status = TournamentStatus.RUNNING;
+      }
+    }
+    return mapper.tournament(tournament);
+  }
+
+  @Transactional
+  public TournamentResponse regressStep(UUID id) {
+    Tournament tournament = requireTournament(id);
+    permissions.requireTournamentManage(tournament);
+    if (tournament.step == 4) {
+      throw new BusinessConflictException("Cannot regress a running tournament");
+    }
+    if (tournament.step > 0) {
+      tournament.step--;
+    }
+    return mapper.tournament(tournament);
+  }
+
+  @Transactional
+  public TournamentResponse openRegistration(UUID id) {
+    Tournament tournament = requireTournament(id);
+    permissions.requireTournamentManage(tournament);
+    tournament.status = TournamentStatus.REGISTRATION_OPEN;
+    return mapper.tournament(tournament);
+  }
+
+  @Transactional
+  public TournamentResponse closeRegistration(UUID id) {
+    Tournament tournament = requireTournament(id);
+    permissions.requireTournamentManage(tournament);
+    tournament.status = TournamentStatus.REGISTRATION_CLOSED;
+    return mapper.tournament(tournament);
+  }
+
   public Tournament requireTournament(UUID id) {
     return tournaments.findByIdAndDeletedAtIsNull(id)
         .orElseThrow(() -> new ResourceNotFoundException("Tournament not found: " + id));

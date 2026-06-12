@@ -1,0 +1,44 @@
+# Documentation & specs (auto-generated)
+context/
+DESIGN_SPEC.md
+DESIGN_SPEC_ENHANCED.md
+graphify-out/
+
+# Build and dependencies
+node_modules/
+dist/
+build/
+target/
+.gradle/
+*.jar
+*.class
+
+# IDE & editor config
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
+
+# Logs & temp
+*.log
+*.tmp
+
+# Environment & secrets
+.env
+.env.local
+.env*.local
+
+# Version control
+.git/
+.gitignore
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Archives
+*.zip
+*.tar.gz
+*.tar

@@ -652,3 +652,132 @@ export interface ClubFeeOverviewResponse {
   expenses: ClubFinanceExpenseResponse[];
   summary: ClubFinanceSummaryResponse;
 }
+
+export interface NotificationResponse {
+  id: string;
+  type: string;
+  title: string;
+  body?: string;
+  link?: string;
+  read: boolean;
+  createdAt: string;
+}
+
+// ─── Tournament redesign types ───────────────────────────────
+
+export interface PublicTournamentSummary {
+  id: string;
+  name: string;
+  organizerName: string | null;
+  location: string | null;
+  startsOn: string; // ISO date
+  endsOn: string;
+  status: string;
+  participantCount: number;
+  phongTraoEnabled: boolean;
+  nangCaoEnabled: boolean;
+  registrationOpen: boolean;
+  registrationDeadline: string | null;
+}
+
+export type TournamentPhase = 'UPCOMING' | 'ONGOING' | 'FINISHED';
+
+export interface RegistrationEntry {
+  entryId: string;
+  categoryId: string;
+  categoryName: string;
+  athleteId: string;
+  athleteName: string;
+  registrationWeightKg: number | null;
+  btcApprovalStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+}
+
+export interface TournamentRegistration {
+  participantId: string;
+  organizationId: string;
+  displayName: string;
+  status: string;
+  registeredAt: string;
+  entries: RegistrationEntry[];
+}
+
+export interface ParticipantApprovalItem {
+  participantId: string;
+  organizationId: string;
+  organizationName: string;
+  displayName: string;
+  status: string;
+  approvedEntries: number;
+  totalEntries: number;
+}
+
+export interface AthleteApprovalItem {
+  entryId: string;
+  athleteId: string;
+  athleteName: string;
+  organizationId: string;
+  organizationName: string;
+  categoryId: string;
+  categoryName: string;
+  registrationWeightKg: number | null;
+  btcApprovalStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+}
+
+export interface AthleteApprovalSummary {
+  totalEntries: number;
+  approved: number;
+  rejected: number;
+  pending: number;
+}
+
+export interface TournamentDrawCategory {
+  categoryId: string;
+  categoryName: string;
+  athleteCount: number;
+  bracketSize: number;
+  hasActiveDraw: boolean;
+}
+
+export interface TournamentDraw {
+  categories: TournamentDrawCategory[];
+}
+
+export interface ClubStanding {
+  organizationId: string;
+  organizationName: string;
+  totalPoints: number;
+  goldMedals: number;
+  silverMedals: number;
+  bronzeMedals: number;
+  medalScore: number;
+}
+
+export interface AthleteRanking {
+  rank: number;
+  athleteId: string;
+  athleteName: string;
+  organizationId: string;
+  organizationName: string;
+  points: number;
+}
+
+// Extended TournamentResponse with new fields
+export interface TournamentExtended {
+  id: string;
+  name: string;
+  code: string | null;
+  description: string | null;
+  location: string | null;
+  startsOn: string;
+  endsOn: string;
+  status: string;
+  step: number;
+  phongTraoEnabled: boolean;
+  nangCaoEnabled: boolean;
+  registrationDeadline: string | null;
+  registrationFee: number;
+  visibility: string;
+  organizerName: string | null;
+  tatamiCount: number;
+  ownerOrganization: { id: string; name: string } | null;
+}

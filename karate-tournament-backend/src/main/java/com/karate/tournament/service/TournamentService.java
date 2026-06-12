@@ -20,4 +20,8 @@ public interface TournamentService {
   TournamentParticipantResponse addParticipant(UUID tournamentId, ParticipantCreateRequest request);
   TournamentParticipantResponse updateParticipantStatus(UUID tournamentId, UUID participantId, ParticipantStatusRequest request);
   Tournament requireTournament(UUID id);
+  TournamentResponse advanceStep(UUID id);
+  TournamentResponse regressStep(UUID id);
+  TournamentResponse openRegistration(UUID id);
+  TournamentResponse closeRegistration(UUID id);
 }

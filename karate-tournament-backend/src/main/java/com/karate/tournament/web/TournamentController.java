@@ -70,6 +70,26 @@ public class TournamentController {
     return tournaments.addParticipant(id, request);
   }
 
+  @PostMapping("/{id}/advance-step")
+  public TournamentResponse advanceStep(@PathVariable UUID id) {
+    return tournaments.advanceStep(id);
+  }
+
+  @PostMapping("/{id}/regress-step")
+  public TournamentResponse regressStep(@PathVariable UUID id) {
+    return tournaments.regressStep(id);
+  }
+
+  @PostMapping("/{id}/open-registration")
+  public TournamentResponse openRegistration(@PathVariable UUID id) {
+    return tournaments.openRegistration(id);
+  }
+
+  @PostMapping("/{id}/close-registration")
+  public TournamentResponse closeRegistration(@PathVariable UUID id) {
+    return tournaments.closeRegistration(id);
+  }
+
   @PatchMapping("/{id}/participants/{participantId}/status")
   public TournamentParticipantResponse updateParticipantStatus(
       @PathVariable UUID id,

@@ -30,6 +30,11 @@ public record TournamentResponse(
     String ruleSnapshotJson,
     UUID ownerOrganizationId,
     String ownerOrganizationName,
-    UUID createdByUserId
+    UUID createdByUserId,
+    short step,
+    boolean phongTraoEnabled,
+    boolean nangCaoEnabled,
+    Instant registrationDeadline,
+    BigDecimal registrationFee
 ) {
 }

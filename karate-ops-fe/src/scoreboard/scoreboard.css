@@ -1,0 +1,859 @@
+/* =============================================================================
+ * scoreboard/scoreboard.css — single source of visual truth for the tatami board
+ * -----------------------------------------------------------------------------
+ * Implements EXACTLY the classes in contract.ts `C`. WKF-broadcast aesthetic on
+ * the project dark theme. AKA (red) = left, AO (blue) = right. Two contexts:
+ *   .sb-frame.display  — full-screen spectator/projector (dramatic, large)
+ *   .sb-frame.preview  — operator's small floating preview (typography scaled DOWN)
+ * Plus an OBS lower-third overlay surface (.sb-overlay-*).
+ * All colors via the :root design tokens. Numbers are tabular. clamp() scales
+ * type from ~1280px up to 4K.
+ * ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+ * Local tokens — derived from the global palette so we never hardcode hex.
+ * -------------------------------------------------------------------------- */
+.sb-frame,
+.sb-display-page,
+.sb-overlay-page {
+  --sb-aka: var(--aka);
+  --sb-ao: var(--ao);
+  --sb-aka-deep: var(--aka-2);
+  --sb-ao-deep: var(--ao-2);
+  --sb-edge: var(--line);
+  --sb-ink: var(--text);
+  --sb-ink-dim: var(--muted);
+  --sb-ink-faint: var(--muted-2);
+  --sb-gap: clamp(10px, 1.2vw, 22px);
+  --sb-pad: clamp(14px, 1.6vw, 34px);
+  --sb-rad: clamp(10px, 1vw, 18px);
+  /* Default scale knobs — overridden per variant below. */
+  --sb-scale-score: clamp(5rem, 13vw, 14rem);
+  --sb-scale-timer: clamp(2.6rem, 7vw, 7.5rem);
+  --sb-scale-name: clamp(1.1rem, 2.2vw, 2.6rem);
+  --sb-scale-meta: clamp(0.7rem, 1vw, 1.15rem);
+  --sb-flag-size: clamp(34px, 4vw, 88px);
+}
+
+/* =============================================================================
+ * 1) PAGE SHELLS
+ * ========================================================================== */
+.sb-display-page {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: clamp(12px, 2.5vw, 48px);
+  background:
+    radial-gradient(1200px 700px at 18% -10%, rgba(225, 61, 76, 0.16), transparent 60%),
+    radial-gradient(1200px 700px at 82% 110%, rgba(38, 124, 232, 0.16), transparent 60%),
+    radial-gradient(900px 900px at 50% 50%, rgba(255, 255, 255, 0.02), transparent 70%),
+    var(--bg);
+  color: var(--sb-ink);
+  overflow: hidden;
+}
+
+.sb-overlay-page {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: clamp(16px, 4vh, 56px);
+  background: transparent; /* OBS chroma / transparent capture */
+  color: var(--sb-ink);
+}
+
+/* =============================================================================
+ * 2) FRAME / BOARD SCAFFOLDING
+ * ========================================================================== */
+.sb-frame {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  width: 100%;
+  max-width: min(96vw, calc(100dvh * 16 / 9 - 4vw));
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--sb-edge);
+  border-radius: var(--sb-rad);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 22%),
+    linear-gradient(180deg, var(--panel) 0%, var(--panel-3) 100%);
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.015);
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Variant: full-screen display — dramatic, full type scale. */
+.sb-frame.display {
+  --sb-scale-score: clamp(6rem, 13.5vw, 14rem);
+  --sb-scale-timer: clamp(3rem, 7.4vw, 7.6rem);
+  --sb-scale-name: clamp(1.3rem, 2.4vw, 2.7rem);
+  --sb-scale-meta: clamp(0.78rem, 1.05vw, 1.2rem);
+  --sb-flag-size: clamp(46px, 4.4vw, 96px);
+}
+
+/* Variant: preview — same layout, smaller type, cheaper motion. */
+.sb-frame.preview {
+  --sb-scale-score: clamp(2.6rem, 12vw, 5.4rem);
+  --sb-scale-timer: clamp(1.5rem, 7vw, 3rem);
+  --sb-scale-name: clamp(0.8rem, 3.4vw, 1.25rem);
+  --sb-scale-meta: clamp(0.6rem, 1.8vw, 0.78rem);
+  --sb-flag-size: clamp(20px, 6vw, 38px);
+  --sb-pad: clamp(8px, 1.4vw, 16px);
+  --sb-gap: clamp(6px, 1vw, 12px);
+  border-radius: clamp(8px, 1vw, 12px);
+  box-shadow: var(--shadow);
+}
+
+.sb-board-main {
+  display: grid;
+  min-height: 0;
+  padding: var(--sb-pad);
+  gap: var(--sb-gap);
+}
+
+/* Kumite: aka | center | ao */
+.sb-board-main.sb-kumite-layout {
+  grid-template-columns: 5fr 4fr 5fr;
+}
+
+/* Kata: performer-aka | center (judges/tally) | performer-ao */
+.sb-board-main.sb-kata-layout {
+  grid-template-columns: 5fr 4fr 5fr;
+}
+
+@media (max-width: 760px) {
+  .sb-board-main.sb-kumite-layout,
+  .sb-board-main.sb-kata-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =============================================================================
+ * 3) HEADER
+ * ========================================================================== */
+.sb-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--sb-gap);
+  padding: clamp(8px, 1vw, 18px) var(--sb-pad);
+  border-bottom: 1px solid var(--sb-edge);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sb-header-category {
+  justify-self: start;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sb-ink);
+  font-weight: 700;
+  font-size: clamp(0.72rem, 1.25vw, 1.35rem);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sb-header-tatami {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.36em 1em;
+  border: 1px solid rgba(243, 201, 79, 0.4);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(243, 201, 79, 0.22), rgba(243, 201, 79, 0.06));
+  color: var(--gold);
+  font-weight: 800;
+  font-size: clamp(0.7rem, 1.2vw, 1.3rem);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.sb-header-round {
+  justify-self: end;
+  color: var(--sb-ink-dim);
+  font-weight: 700;
+  font-size: clamp(0.72rem, 1.25vw, 1.35rem);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* =============================================================================
+ * 4) FOOTER
+ * ========================================================================== */
+.sb-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--sb-gap);
+  padding: clamp(7px, 0.9vw, 16px) var(--sb-pad);
+  border-top: 1px solid var(--sb-edge);
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.28), transparent);
+  color: var(--sb-ink-dim);
+  font-size: clamp(0.66rem, 1vw, 1.05rem);
+}
+
+.sb-footer > :first-child { justify-self: start; }
+.sb-footer > :last-child { justify-self: end; }
+
+.sb-next-match {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  max-width: 46ch;
+  overflow: hidden;
+  color: var(--sb-ink-dim);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sb-next-match::before {
+  content: "";
+  width: 0.5em;
+  height: 0.5em;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 10px rgba(243, 201, 79, 0.7);
+}
+
+/* =============================================================================
+ * 5) COMPETITOR SIDE (KUMITE)
+ * ========================================================================== */
+.sb-side {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  align-content: start;
+  gap: clamp(6px, 0.7vw, 16px);
+  min-width: 0;
+  padding: var(--sb-pad);
+  border: 1px solid var(--sb-edge);
+  border-radius: var(--sb-rad);
+  background: var(--panel-2);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* Color tint toward outer edge per side. */
+.sb-side.aka {
+  border-color: rgba(225, 61, 76, 0.38);
+  background:
+    radial-gradient(120% 130% at 0% 0%, rgba(225, 61, 76, 0.26), transparent 58%),
+    linear-gradient(180deg, var(--panel-2), var(--panel-3));
+}
+.sb-side.ao {
+  border-color: rgba(38, 124, 232, 0.38);
+  background:
+    radial-gradient(120% 130% at 100% 0%, rgba(38, 124, 232, 0.26), transparent 58%),
+    linear-gradient(180deg, var(--panel-2), var(--panel-3));
+}
+
+/* Thick color rail on the outer edge. */
+.sb-side::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: clamp(4px, 0.5vw, 9px);
+  z-index: 1;
+}
+.sb-side.aka::before { left: 0; background: linear-gradient(180deg, var(--aka), var(--aka-2)); box-shadow: 0 0 24px rgba(225, 61, 76, 0.5); }
+.sb-side.ao::before { right: 0; background: linear-gradient(180deg, var(--ao), var(--ao-2)); box-shadow: 0 0 24px rgba(38, 124, 232, 0.5); }
+
+/* AKA / AO color badge */
+.sb-side-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  gap: 0.4em;
+  padding: 0.3em 0.85em;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: clamp(0.7rem, 1.2vw, 1.4rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.sb-side.aka .sb-side-badge {
+  color: #fff;
+  background: linear-gradient(180deg, var(--aka), var(--aka-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 4px 16px rgba(225, 61, 76, 0.35);
+}
+.sb-side.ao .sb-side-badge {
+  color: #fff;
+  background: linear-gradient(180deg, var(--ao), var(--ao-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 4px 16px rgba(38, 124, 232, 0.35);
+}
+.sb-side.ao .sb-side-badge { justify-self: end; }
+.sb-side.ao > .sb-side-badge { margin-left: auto; }
+
+/* The big score — the DOMINANT element. */
+.sb-score-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.sb-score-value {
+  margin: 0;
+  font-weight: 900;
+  font-size: var(--sb-scale-score);
+  line-height: 0.86;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  text-shadow: 0 8px 40px rgba(0, 0, 0, 0.55);
+}
+.sb-side.aka .sb-score-value {
+  color: #fff;
+  background: linear-gradient(180deg, #fff, #ffd7db);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.sb-side.ao .sb-score-value {
+  color: #fff;
+  background: linear-gradient(180deg, #fff, #cfe3ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Transient last-point pop, floats above the score in side color. */
+.sb-point-pop {
+  position: absolute;
+  top: 6%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.22em 0.7em;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: clamp(0.9rem, 1.8vw, 2rem);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sb-side.aka .sb-point-pop {
+  color: #fff;
+  background: linear-gradient(180deg, var(--aka), var(--aka-2));
+  box-shadow: 0 8px 30px rgba(225, 61, 76, 0.55);
+}
+.sb-side.ao .sb-point-pop {
+  color: #fff;
+  background: linear-gradient(180deg, var(--ao), var(--ao-2));
+  box-shadow: 0 8px 30px rgba(38, 124, 232, 0.55);
+}
+
+/* SENSHU — first unopposed point advantage, gold marker. */
+.sb-senshu {
+  position: absolute;
+  top: var(--sb-pad);
+  right: var(--sb-pad);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.28em 0.7em;
+  border: 1px solid rgba(243, 201, 79, 0.6);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(243, 201, 79, 0.28), rgba(243, 201, 79, 0.08));
+  color: var(--gold);
+  font-weight: 900;
+  font-size: clamp(0.62rem, 1vw, 1.05rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: 0 0 18px rgba(243, 201, 79, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.sb-side.ao .sb-senshu { right: auto; left: var(--sb-pad); }
+
+.sb-athlete-name {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sb-ink);
+  font-weight: 800;
+  font-size: var(--sb-scale-name);
+  line-height: 1.04;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sb-side.ao .sb-athlete-name { text-align: right; }
+
+.sb-athlete-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em 0.9em;
+  color: var(--sb-ink-dim);
+  font-weight: 600;
+  font-size: var(--sb-scale-meta);
+  letter-spacing: 0.02em;
+}
+.sb-side.ao .sb-athlete-meta { justify-content: flex-end; }
+
+/* Penalty ladder — horizontal row of small square cells. */
+.sb-penalty-ladder {
+  display: flex;
+  gap: clamp(4px, 0.4vw, 8px);
+  align-items: center;
+}
+.sb-side.ao .sb-penalty-ladder { justify-content: flex-end; }
+
+.sb-penalty-cell {
+  display: grid;
+  place-items: center;
+  min-width: clamp(22px, 2.2vw, 44px);
+  height: clamp(22px, 2.2vw, 44px);
+  padding: 0 0.3em;
+  border: 1px solid var(--sb-edge);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--sb-ink-faint);
+  font-weight: 800;
+  font-size: clamp(0.6rem, 0.95vw, 1.05rem);
+  letter-spacing: 0.04em;
+  line-height: 1;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+/* Earned penalty step. */
+.sb-penalty-cell.is-active {
+  color: var(--text);
+  border-color: rgba(243, 201, 79, 0.55);
+  background: linear-gradient(180deg, rgba(243, 201, 79, 0.34), rgba(243, 201, 79, 0.12));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Terminal penalty (hansoku / shikkaku / kiken) — DQ lamp lit. */
+.sb-penalty-cell.is-danger {
+  color: #fff;
+  border-color: var(--danger);
+  background: linear-gradient(180deg, var(--danger), #c23a3a);
+  box-shadow: 0 0 18px rgba(255, 104, 104, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  animation: sb-danger-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes sb-danger-pulse {
+  0%, 100% { box-shadow: 0 0 14px rgba(255, 104, 104, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+  50% { box-shadow: 0 0 26px rgba(255, 104, 104, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+}
+
+/* =============================================================================
+ * 6) CENTER COLUMN (KUMITE)
+ * ========================================================================== */
+.sb-center {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  align-content: center;
+  justify-items: center;
+  gap: clamp(8px, 1vw, 20px);
+  padding: var(--sb-pad);
+  text-align: center;
+}
+
+.sb-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.4em 1.1em;
+  border: 1px solid var(--sb-edge);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  color: var(--sb-ink-dim);
+  font-weight: 800;
+  font-size: clamp(0.66rem, 1.1vw, 1.15rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.sb-status-chip::before {
+  content: "";
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 10px rgba(58, 201, 121, 0.8);
+}
+
+.sb-timer {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-weight: 900;
+  font-size: var(--sb-scale-timer);
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--sb-ink);
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.5);
+  transition: color 200ms ease, text-shadow 200ms ease;
+}
+
+/* Warning state — under ~15s. Red with subtle pulse. */
+.sb-timer.is-warning {
+  color: var(--danger);
+  text-shadow: 0 0 30px rgba(255, 104, 104, 0.6);
+  animation: sb-timer-pulse 1s ease-in-out infinite;
+}
+
+@keyframes sb-timer-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.035); opacity: 0.82; }
+}
+
+.sb-center-caption {
+  color: var(--gold);
+  font-weight: 800;
+  font-size: clamp(0.7rem, 1.3vw, 1.4rem);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 16px rgba(243, 201, 79, 0.35);
+}
+
+.sb-center-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(5px, 0.5vw, 10px);
+}
+
+.sb-small-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.28em 0.7em;
+  border: 1px solid var(--sb-edge);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--sb-ink-dim);
+  font-weight: 700;
+  font-size: clamp(0.58rem, 0.9vw, 1rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.sb-small-chip.aka {
+  color: #ffd7db;
+  border-color: rgba(225, 61, 76, 0.5);
+  background: rgba(225, 61, 76, 0.16);
+}
+.sb-small-chip.ao {
+  color: #cfe3ff;
+  border-color: rgba(38, 124, 232, 0.5);
+  background: rgba(38, 124, 232, 0.16);
+}
+
+/* =============================================================================
+ * 7) KATA — flag/vote model
+ * ========================================================================== */
+.sb-kata-performer {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  align-content: start;
+  gap: clamp(8px, 0.9vw, 18px);
+  min-width: 0;
+  padding: var(--sb-pad);
+  border: 1px solid var(--sb-edge);
+  border-radius: var(--sb-rad);
+  background: var(--panel-2);
+  overflow: hidden;
+  isolation: isolate;
+}
+.sb-kata-performer.aka {
+  border-color: rgba(225, 61, 76, 0.38);
+  background:
+    radial-gradient(120% 130% at 0% 0%, rgba(225, 61, 76, 0.24), transparent 58%),
+    linear-gradient(180deg, var(--panel-2), var(--panel-3));
+}
+.sb-kata-performer.ao {
+  border-color: rgba(38, 124, 232, 0.38);
+  background:
+    radial-gradient(120% 130% at 100% 0%, rgba(38, 124, 232, 0.24), transparent 58%),
+    linear-gradient(180deg, var(--panel-2), var(--panel-3));
+}
+.sb-kata-performer::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  width: clamp(4px, 0.5vw, 9px);
+  z-index: 1;
+}
+.sb-kata-performer.aka::before { left: 0; background: linear-gradient(180deg, var(--aka), var(--aka-2)); box-shadow: 0 0 24px rgba(225, 61, 76, 0.5); }
+.sb-kata-performer.ao::before { right: 0; background: linear-gradient(180deg, var(--ao), var(--ao-2)); box-shadow: 0 0 24px rgba(38, 124, 232, 0.5); }
+
+.sb-kata-name {
+  margin: 0;
+  color: var(--gold);
+  font-weight: 800;
+  font-size: clamp(1rem, 2vw, 2.4rem);
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.sb-kata-performer.ao .sb-kata-name { text-align: right; }
+.sb-kata-performer.ao .sb-athlete-name,
+.sb-kata-performer.ao .sb-athlete-meta { text-align: right; justify-content: flex-end; }
+
+.sb-kata-phase {
+  align-self: end;
+  color: var(--sb-ink-dim);
+  font-weight: 700;
+  font-size: clamp(0.66rem, 1vw, 1.1rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.sb-kata-performer.ao .sb-kata-phase { text-align: right; }
+
+/* Judge flags — centered row, neutral until reveal. */
+.sb-judge-flags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  gap: clamp(6px, 0.8vw, 16px);
+}
+
+.sb-judge-flag {
+  position: relative;
+  width: var(--sb-flag-size);
+  height: var(--sb-flag-size);
+  border: 1px solid var(--sb-edge);
+  border-radius: clamp(6px, 0.7vw, 12px);
+  /* Neutral / hidden by default. */
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.04) 0 6px, rgba(255, 255, 255, 0.015) 6px 12px),
+    var(--panel-3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: background 320ms ease, border-color 320ms ease, box-shadow 320ms ease, transform 320ms ease;
+  transform-style: preserve-3d;
+}
+.sb-judge-flag.aka {
+  border-color: rgba(225, 61, 76, 0.6);
+  background: linear-gradient(180deg, var(--aka), var(--aka-2));
+  box-shadow: 0 6px 22px rgba(225, 61, 76, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.sb-judge-flag.ao {
+  border-color: rgba(38, 124, 232, 0.6);
+  background: linear-gradient(180deg, var(--ao), var(--ao-2));
+  box-shadow: 0 6px 22px rgba(38, 124, 232, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* Kata tally — big numerals, aka vs ao. */
+.sb-kata-tally {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 1.2vw, 24px);
+  font-weight: 900;
+  font-size: clamp(2.2rem, 6vw, 6rem);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.sb-kata-tally .aka { color: var(--aka); text-shadow: 0 0 26px rgba(225, 61, 76, 0.4); }
+.sb-kata-tally .ao { color: var(--ao); text-shadow: 0 0 26px rgba(38, 124, 232, 0.4); }
+.sb-kata-tally .sb-tally-sep,
+.sb-kata-tally span:not(.aka):not(.ao) { color: var(--sb-ink-faint); font-weight: 700; }
+
+/* Majority chip — prominent pill in side color. */
+.sb-majority-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.4em 1.2em;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: clamp(0.8rem, 1.5vw, 1.6rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--sb-edge);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--sb-ink-dim);
+}
+.sb-majority-chip.aka {
+  color: #fff;
+  border-color: rgba(225, 61, 76, 0.6);
+  background: linear-gradient(180deg, var(--aka), var(--aka-2));
+  box-shadow: 0 8px 26px rgba(225, 61, 76, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.sb-majority-chip.ao {
+  color: #fff;
+  border-color: rgba(38, 124, 232, 0.6);
+  background: linear-gradient(180deg, var(--ao), var(--ao-2));
+  box-shadow: 0 8px 26px rgba(38, 124, 232, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* =============================================================================
+ * 8) WINNER OVERLAY
+ * ========================================================================== */
+.sb-winner-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: var(--sb-pad);
+  background: rgba(5, 7, 10, 0.62);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+}
+
+.sb-winner-card {
+  display: grid;
+  justify-items: center;
+  gap: clamp(8px, 1.2vw, 20px);
+  width: min(72%, 640px);
+  padding: clamp(20px, 3vw, 48px);
+  border: 1px solid var(--sb-edge);
+  border-radius: clamp(12px, 1.4vw, 22px);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel-3));
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  text-align: center;
+  animation: sb-winner-in 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sb-winner-card.aka {
+  border-color: rgba(225, 61, 76, 0.7);
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(225, 61, 76, 0.4), transparent 60%),
+    linear-gradient(180deg, var(--panel-2), var(--panel-3));
+  box-shadow: var(--shadow), 0 0 80px rgba(225, 61, 76, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.sb-winner-card.ao {
+  border-color: rgba(38, 124, 232, 0.7);
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(38, 124, 232, 0.4), transparent 60%),
+    linear-gradient(180deg, var(--panel-2), var(--panel-3));
+  box-shadow: var(--shadow), 0 0 80px rgba(38, 124, 232, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.sb-winner-card svg {
+  width: clamp(2.4rem, 5vw, 5rem);
+  height: clamp(2.4rem, 5vw, 5rem);
+  color: var(--gold);
+  filter: drop-shadow(0 0 24px rgba(243, 201, 79, 0.6));
+}
+.sb-winner-card .sb-side-badge {
+  font-size: clamp(0.9rem, 1.6vw, 1.6rem);
+}
+.sb-winner-card .sb-athlete-name {
+  font-size: clamp(1.4rem, 3.4vw, 3.4rem);
+  white-space: normal;
+  text-align: center;
+}
+
+@keyframes sb-winner-in {
+  from { opacity: 0; transform: scale(0.86) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* =============================================================================
+ * 9) OBS LOWER-THIRD OVERLAY
+ * ========================================================================== */
+.sb-overlay-strip {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  width: min(1280px, 96vw);
+  border: 1px solid var(--sb-edge);
+  border-radius: clamp(10px, 1vw, 16px);
+  background: linear-gradient(180deg, rgba(23, 28, 35, 0.94), rgba(17, 22, 29, 0.94));
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.sb-overlay-side {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: clamp(2px, 0.4vw, 6px);
+  padding: clamp(12px, 1.4vw, 24px) clamp(16px, 2vw, 34px);
+  min-width: 0;
+}
+.sb-overlay-side .sb-athlete-name {
+  font-size: clamp(1rem, 2vw, 2rem);
+  white-space: nowrap;
+}
+.sb-overlay-side.aka {
+  background: linear-gradient(90deg, rgba(225, 61, 76, 0.32), transparent);
+  border-left: clamp(4px, 0.4vw, 7px) solid var(--aka);
+}
+.sb-overlay-side.ao {
+  text-align: right;
+  background: linear-gradient(270deg, rgba(38, 124, 232, 0.32), transparent);
+  border-right: clamp(4px, 0.4vw, 7px) solid var(--ao);
+}
+.sb-overlay-side.ao .sb-athlete-name,
+.sb-overlay-side.ao .sb-athlete-meta { justify-content: flex-end; text-align: right; }
+
+/* Per-side compact score inside overlay block. */
+.sb-overlay-side .sb-score-value {
+  font-size: clamp(1.8rem, 4vw, 3.6rem);
+  line-height: 1;
+}
+
+.sb-overlay-center {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: clamp(3px, 0.5vw, 8px);
+  padding: clamp(10px, 1.2vw, 20px) clamp(16px, 2vw, 30px);
+  border-left: 1px solid var(--sb-edge);
+  border-right: 1px solid var(--sb-edge);
+  background: rgba(0, 0, 0, 0.25);
+  text-align: center;
+}
+
+.sb-overlay-timer {
+  font-weight: 900;
+  font-size: clamp(1.6rem, 3.4vw, 3.2rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--sb-ink);
+}
+.sb-overlay-timer.is-warning {
+  color: var(--danger);
+  text-shadow: 0 0 20px rgba(255, 104, 104, 0.6);
+  animation: sb-timer-pulse 1s ease-in-out infinite;
+}
+
+.sb-overlay-meta {
+  color: var(--sb-ink-dim);
+  font-weight: 700;
+  font-size: clamp(0.58rem, 0.9vw, 0.95rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* =============================================================================
+ * 10) MOTION PREFERENCES
+ * ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .sb-timer.is-warning,
+  .sb-overlay-timer.is-warning,
+  .sb-penalty-cell.is-danger,
+  .sb-winner-card,
+  .sb-judge-flag {
+    animation: none !important;
+    transition: none !important;
+  }
+}
