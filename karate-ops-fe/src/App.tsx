@@ -15,6 +15,7 @@ import {
   Gauge,
   History,
   ListChecks,
+  Megaphone,
   Monitor,
   Move,
   Pause,
@@ -42,6 +43,13 @@ import {
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import ClubManagementPage from "./ClubManagementPage";
 import { apiDelete, apiGet, apiPatch, apiPost, getAuthToken, setAuthToken } from "./apiClient";
+import { LeaveRequestForm, type LeaveRequestFormData } from "./features/clubs/components/LeaveRequestForm";
+import {
+  JOIN_REQUEST_STATUS_LABELS,
+  LEAVE_REQUEST_STATUS_LABELS,
+  LEAVE_REQUEST_TYPE_LABELS,
+  TOURNAMENT_STATUS_LABELS
+} from "./features/clubs/clubConstants";
 import { useScoreboard } from "./useScoreboard";
 import type {
   AuthResponse,
@@ -50,6 +58,7 @@ import type {
   AttendanceRecordResponse,
   AttendanceSessionResponse,
   CategoryResponse,
+  ClubAnnouncementResponse,
   ClubMemberResponse,
   ClubRosterResponse,
   Competitor,
@@ -71,8 +80,10 @@ import type {
   StatePayload,
   TatamiResponse,
   TatamiDashboardRow,
+  TournamentJoinRequestResponse,
   TournamentParticipantResponse,
-  TournamentResponse
+  TournamentResponse,
+  LeaveRequestResponse
 } from "./types";
 import { cx, durationFromPreset, formatClockTime, formatMs, liveRemaining, sideLabel, winnerText } from "./utils";
 
@@ -770,7 +781,11 @@ function MemberPortalPage({
   const [profile, setProfile] = useState<MemberClubProfileResponse | null>(null);
   const [fees, setFees] = useState<MemberFeeSummaryResponse | null>(null);
   const [attendance, setAttendance] = useState<MemberAttendanceSummaryResponse | null>(null);
-  const [leaveReasonBySession, setLeaveReasonBySession] = useState<Record<string, string>>({});
+  const [announcements, setAnnouncements] = useState<ClubAnnouncementResponse[]>([]);
+  const [myLeaveRequests, setMyLeaveRequests] = useState<LeaveRequestResponse[]>([]);
+  const [joinRequests, setJoinRequests] = useState<TournamentJoinRequestResponse[]>([]);
+  const [tournaments, setTournaments] = useState<TournamentResponse[]>([]);
+  const [leaveModal, setLeaveModal] = useState<{ open: boolean; sessionId?: string }>({ open: false });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -784,23 +799,44 @@ function MemberPortalPage({
     setProfile(nextProfile);
     setFees(nextFees);
     setAttendance(nextAttendance);
+    const [announcementResult, leaveResult, joinResult, tournamentResult] = await Promise.allSettled([
+      apiGet<ClubAnnouncementResponse[]>("/api/me/announcements"),
+      apiGet<LeaveRequestResponse[]>("/api/me/leave-requests"),
+      apiGet<TournamentJoinRequestResponse[]>("/api/me/tournament-join-requests"),
+      apiGet<TournamentResponse[]>("/api/tournaments")
+    ]);
+    setAnnouncements(announcementResult.status === "fulfilled" ? announcementResult.value : []);
+    setMyLeaveRequests(leaveResult.status === "fulfilled" ? leaveResult.value : []);
+    setJoinRequests(joinResult.status === "fulfilled" ? joinResult.value : []);
+    setTournaments(tournamentResult.status === "fulfilled" ? tournamentResult.value : []);
   }, []);
 
   useEffect(() => {
     load().catch((err) => setError(errorMessage(err)));
   }, [load]);
 
-  async function requestLeave(sessionId: string) {
-    const reason = leaveReasonBySession[sessionId]?.trim();
-    if (!reason) {
-      setError("Nhập lý do xin nghỉ trước khi gửi.");
-      return;
-    }
+  const memberships = profile?.memberships ?? [];
+  const feeRows = fees?.assignments ?? [];
+  const attendanceRows = attendance?.sessionRows ?? [];
+  const primaryOrganizationId = memberships[0]?.organizationId;
+  const pendingRequests = myLeaveRequests.filter((row) => row.status === "PENDING").length
+    + joinRequests.filter((row) => row.status === "PENDING").length;
+  const joinRequestByTournament = new Map(joinRequests.map((row) => [row.tournamentId, row]));
+  const openTournaments = tournaments.filter((event) => event.status === "REGISTRATION_OPEN");
+
+  async function submitLeaveRequest(data: LeaveRequestFormData) {
     setBusy(true);
     setError(null);
     try {
-      await apiPost("/api/me/attendance/leave-requests", { sessionId, reason });
-      setLeaveReasonBySession((current) => ({ ...current, [sessionId]: "" }));
+      await apiPost("/api/me/attendance/leave-requests", {
+        requestType: data.requestType,
+        sessionId: data.sessionId,
+        organizationId: data.requestType === "LEAVE_LONG_TERM" ? primaryOrganizationId : undefined,
+        fromDate: data.fromDate,
+        toDate: data.toDate,
+        reason: data.reason
+      });
+      setLeaveModal({ open: false });
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -809,10 +845,24 @@ function MemberPortalPage({
     }
   }
 
+  async function requestJoinTournament(tournamentId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await apiPost<TournamentJoinRequestResponse>("/api/me/tournament-join-requests", {
+        tournamentId,
+        organizationId: primaryOrganizationId
+      });
+      setJoinRequests((current) => [created, ...current.filter((row) => row.id !== created.id)]);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const money = (value?: number) => new Intl.NumberFormat("vi-VN").format(Number(value || 0));
-  const memberships = profile?.memberships ?? [];
-  const feeRows = fees?.assignments ?? [];
-  const attendanceRows = attendance?.sessionRows ?? [];
+  const dateText = (value?: string) => value ? new Intl.DateTimeFormat("vi-VN").format(new Date(value)) : "chưa rõ";
 
   return (
     <main className="member-portal-page">
@@ -860,8 +910,28 @@ function MemberPortalPage({
           </div>
           <div className="member-summary-card">
             <span>Request chờ duyệt</span>
-            <strong>{attendance?.pendingLeaveRequests ?? 0}</strong>
+            <strong>{pendingRequests}</strong>
           </div>
+        </section>
+
+        <section className="member-panel member-announcements">
+          <div className="member-panel-head">
+            <span>Thông báo</span>
+            <h2>Tin mới từ CLB của bạn</h2>
+          </div>
+          {announcements.length === 0 ? <MemberEmpty text="Chưa có thông báo nào từ CLB." /> : announcements.slice(0, 6).map((announcement) => (
+            <article className={announcement.pinned ? "member-announcement-row pinned" : "member-announcement-row"} key={announcement.id}>
+              <div className="member-announcement-icon"><Megaphone size={17} /></div>
+              <div>
+                <strong>
+                  {announcement.pinned ? <span className="member-announcement-pin"><Pin size={12} /> Ghim</span> : null}
+                  {announcement.title}
+                </strong>
+                <p>{announcement.content}</p>
+                <small>{announcement.organizationName} - {dateText(announcement.createdAt)}</small>
+              </div>
+            </article>
+          ))}
         </section>
 
         <section className="member-portal-grid">
@@ -898,6 +968,74 @@ function MemberPortalPage({
           </article>
         </section>
 
+        <section className="member-portal-grid">
+          <article className="member-panel">
+            <div className="member-panel-head with-action">
+              <div>
+                <span>Giải đấu</span>
+                <h2>Xin tham gia giải</h2>
+              </div>
+            </div>
+            {openTournaments.length === 0 ? <MemberEmpty text="Hiện chưa có giải nào đang mở đăng ký." /> : openTournaments.map((event) => {
+              const existing = joinRequestByTournament.get(event.id);
+              return (
+                <div className="member-row" key={event.id}>
+                  <div>
+                    <strong>{event.name}</strong>
+                    <span>{TOURNAMENT_STATUS_LABELS[event.status || ""] || event.status}{event.startsOn ? ` / thi đấu ${dateText(event.startsOn)}` : ""}</span>
+                  </div>
+                  {existing && existing.status !== "REJECTED" ? (
+                    <small className={`member-request-chip ${existing.status.toLowerCase()}`}>{JOIN_REQUEST_STATUS_LABELS[existing.status]}</small>
+                  ) : (
+                    <button className="member-inline-button" disabled={busy || memberships.length === 0} onClick={() => requestJoinTournament(event.id)}>
+                      Xin tham gia
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {joinRequests.length > 0 ? (
+              <div className="member-request-history">
+                <small className="member-request-history-title">Yêu cầu đã gửi</small>
+                {joinRequests.slice(0, 5).map((request) => (
+                  <div className="member-row compact" key={request.id}>
+                    <div>
+                      <strong>{request.tournamentName}</strong>
+                      <span>Gửi {dateText(request.createdAt)}{request.decisionNote ? ` / ${request.decisionNote}` : ""}</span>
+                    </div>
+                    <small className={`member-request-chip ${request.status.toLowerCase()}`}>{JOIN_REQUEST_STATUS_LABELS[request.status]}</small>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </article>
+
+          <article className="member-panel">
+            <div className="member-panel-head with-action">
+              <div>
+                <span>Xin nghỉ</span>
+                <h2>Yêu cầu của bạn</h2>
+              </div>
+              <button className="member-inline-button" disabled={busy || memberships.length === 0} onClick={() => setLeaveModal({ open: true })}>
+                Tạo yêu cầu
+              </button>
+            </div>
+            {myLeaveRequests.length === 0 ? <MemberEmpty text="Bạn chưa gửi yêu cầu xin nghỉ nào." /> : myLeaveRequests.slice(0, 6).map((request) => (
+              <div className="member-row" key={request.id}>
+                <div>
+                  <strong>{LEAVE_REQUEST_TYPE_LABELS[request.requestType] || request.requestType}</strong>
+                  <span>
+                    {request.requestType === "LEAVE_LONG_TERM" && request.fromDate && request.toDate
+                      ? `${dateText(request.fromDate)} - ${dateText(request.toDate)}`
+                      : request.sessionName || "Buổi tập"} / {request.reason}
+                  </span>
+                </div>
+                <small className={`member-request-chip ${request.status.toLowerCase()}`}>{LEAVE_REQUEST_STATUS_LABELS[request.status] || request.status}</small>
+              </div>
+            ))}
+          </article>
+        </section>
+
         <section className="member-panel attendance">
           <div className="member-panel-head">
             <span>Chuyên cần</span>
@@ -910,23 +1048,40 @@ function MemberPortalPage({
                 <div>
                   <strong>{session.name}</strong>
                   <span>{session.organizationName} / {session.scheduledDate || session.scheduledAt?.slice(0, 10) || "chưa xếp lịch"}</span>
-                  <small>Điểm danh: {session.record?.status || "Chưa ghi nhận"}{leave ? ` / Xin nghỉ: ${leave.status}` : ""}</small>
+                  <small>Điểm danh: {session.record?.status || "Chưa ghi nhận"}{leave ? ` / Xin nghỉ: ${LEAVE_REQUEST_STATUS_LABELS[leave.status] || leave.status}` : ""}</small>
                 </div>
-                {!leave ? (
-                  <div className="member-leave-box">
-                    <input
-                      value={leaveReasonBySession[session.id] || ""}
-                      onChange={(event) => setLeaveReasonBySession((current) => ({ ...current, [session.id]: event.target.value }))}
-                      placeholder="Lý do xin nghỉ"
-                    />
-                    <button disabled={busy} onClick={() => requestLeave(session.id)}>Gửi xin nghỉ</button>
-                  </div>
-                ) : <small className="member-leave-status">{leave.reason}</small>}
+                {!leave && session.status === "OPEN" ? (
+                  <button className="member-inline-button" disabled={busy} onClick={() => setLeaveModal({ open: true, sessionId: session.id })}>
+                    Xin nghỉ buổi này
+                  </button>
+                ) : leave ? <small className="member-leave-status">{leave.reason}</small> : null}
               </div>
             );
           })}
         </section>
       </section>
+
+      {leaveModal.open ? (
+        <div className="club-modal-overlay" onClick={() => setLeaveModal({ open: false })}>
+          <div className="club-modal member-leave-modal" onClick={(event) => event.stopPropagation()}>
+            <h3>Tạo yêu cầu xin nghỉ</h3>
+            <LeaveRequestForm
+              key={leaveModal.sessionId || "new"}
+              busy={busy}
+              error={error}
+              sessions={attendanceRows.map((session) => ({
+                id: session.id,
+                name: session.name,
+                status: session.status,
+                scheduledAt: session.scheduledAt,
+                scheduledDate: session.scheduledDate
+              }))}
+              initialSessionId={leaveModal.sessionId}
+              onSubmit={submitLeaveRequest}
+            />
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

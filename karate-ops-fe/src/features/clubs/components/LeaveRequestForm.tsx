@@ -1,58 +1,53 @@
-import { motion } from "framer-motion";
-import { X, Calendar } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import type { AttendanceSessionResponse } from "../../../types";
 import { cx } from "../../../utils";
 import { LEAVE_REQUEST_TYPES, LEAVE_REQUEST_TYPE_LABELS } from "../clubConstants";
+
+export interface LeaveRequestFormSession {
+  id: string;
+  name: string;
+  status: string;
+  scheduledAt?: string;
+  scheduledDate?: string;
+}
+
+export interface LeaveRequestFormData {
+  requestType: "LEAVE_LONG_TERM" | "LEAVE_SESSION" | "LATE";
+  sessionId?: string;
+  fromDate?: string;
+  toDate?: string;
+  reason: string;
+}
 
 interface LeaveRequestFormProps {
   busy: boolean;
   error: string | null;
-  sessions: AttendanceSessionResponse[];
-  onSubmit: (event: FormEvent, data: {
-    requestType: "LEAVE_LONG_TERM" | "LEAVE_SESSION" | "LATE";
-    sessionId?: string;
-    fromDate?: string;
-    toDate?: string;
-    reason: string;
-  }) => void;
+  sessions: LeaveRequestFormSession[];
+  initialSessionId?: string;
+  onSubmit: (data: LeaveRequestFormData) => void;
 }
 
-export function LeaveRequestForm({
-  busy,
-  error,
-  sessions,
-  onSubmit
-}: LeaveRequestFormProps) {
-  const [requestType, setRequestType] = useState<"LEAVE_LONG_TERM" | "LEAVE_SESSION" | "LATE">("LEAVE_SESSION");
-  const [sessionId, setSessionId] = useState("");
+export function LeaveRequestForm({ busy, error, sessions, initialSessionId, onSubmit }: LeaveRequestFormProps) {
+  const [requestType, setRequestType] = useState<LeaveRequestFormData["requestType"]>("LEAVE_SESSION");
+  const [sessionId, setSessionId] = useState(initialSessionId || "");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [reason, setReason] = useState("");
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!reason.trim()) {
-      alert("Vui lòng nhập lý do");
-      return;
-    }
+  const openSessions = sessions.filter((session) => session.status === "OPEN");
+  const needsSession = requestType === "LEAVE_SESSION" || requestType === "LATE";
+  const invalid = !reason.trim()
+    || (needsSession && !sessionId)
+    || (requestType === "LEAVE_LONG_TERM" && (!fromDate || !toDate || toDate < fromDate));
 
-    if (requestType === "LEAVE_SESSION" && !sessionId) {
-      alert("Vui lòng chọn buổi tập");
-      return;
-    }
-
-    if (requestType === "LEAVE_LONG_TERM" && (!fromDate || !toDate)) {
-      alert("Vui lòng nhập ngày bắt đầu và kết thúc");
-      return;
-    }
-
-    onSubmit(e, {
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (invalid) return;
+    onSubmit({
       requestType,
-      sessionId: requestType === "LEAVE_SESSION" ? sessionId : undefined,
+      sessionId: needsSession ? sessionId : undefined,
       fromDate: requestType === "LEAVE_LONG_TERM" ? fromDate : undefined,
       toDate: requestType === "LEAVE_LONG_TERM" ? toDate : undefined,
-      reason
+      reason: reason.trim()
     });
   };
 
@@ -67,53 +62,38 @@ export function LeaveRequestForm({
               name="requestType"
               value={type}
               checked={requestType === type}
-              onChange={() => setRequestType(type as any)}
+              onChange={() => setRequestType(type)}
             />
             <span>{LEAVE_REQUEST_TYPE_LABELS[type]}</span>
           </label>
         ))}
       </div>
 
-      {requestType === "LEAVE_SESSION" && (
+      {needsSession ? (
         <>
-          <div className="club-form-section-title">Chọn buổi tập</div>
-          <select
-            value={sessionId}
-            onChange={(e) => setSessionId(e.target.value)}
-            required
-            className="club-form-select"
-          >
-            <option value="">-- Chọn buổi tập --</option>
-            {sessions.filter((s) => s.status === "OPEN").map((session) => (
-              <option key={session.id} value={session.id}>
-                {session.name} ({session.scheduledAt?.split("T")[0] || "Chưa có ngày"})
-              </option>
-            ))}
-          </select>
+          <div className="club-form-section-title">Buổi tập</div>
+          {openSessions.length === 0 ? (
+            <p className="club-helper-text">Không có buổi tập nào đang mở để xin nghỉ.</p>
+          ) : (
+            <select value={sessionId} onChange={(event) => setSessionId(event.target.value)} required className="club-form-select">
+              <option value="">-- Chọn buổi tập --</option>
+              {openSessions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {session.name} ({session.scheduledDate || session.scheduledAt?.split("T")[0] || "Chưa có ngày"})
+                </option>
+              ))}
+            </select>
+          )}
         </>
-      )}
-
-      {requestType === "LEAVE_LONG_TERM" && (
+      ) : (
         <div className="club-form-grid">
           <div>
             <label className="club-form-label">Từ ngày *</label>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              required
-              className="club-form-input"
-            />
+            <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} required className="club-form-input" />
           </div>
           <div>
             <label className="club-form-label">Đến ngày *</label>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              required
-              className="club-form-input"
-            />
+            <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} required className="club-form-input" />
           </div>
         </div>
       )}
@@ -121,7 +101,7 @@ export function LeaveRequestForm({
       <div className="club-form-section-title">Lý do</div>
       <textarea
         value={reason}
-        onChange={(e) => setReason(e.target.value)}
+        onChange={(event) => setReason(event.target.value)}
         placeholder="Nêu lý do chi tiết (bệnh, công việc, sự kiện...)"
         rows={4}
         className="club-form-textarea"
@@ -133,10 +113,7 @@ export function LeaveRequestForm({
       </p>
 
       {error ? <p className="club-form-error">{error}</p> : null}
-      <button
-        className="club-primary-button"
-        disabled={busy || !reason.trim() || (requestType === "LEAVE_SESSION" && !sessionId) || (requestType === "LEAVE_LONG_TERM" && (!fromDate || !toDate))}
-      >
+      <button className="club-primary-button" disabled={busy || invalid}>
         {busy ? "Đang gửi..." : "Gửi yêu cầu"}
       </button>
     </form>

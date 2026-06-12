@@ -54,7 +54,7 @@ If no `tatamiId` query param is present, `useManualTatami` (local-only state) is
 
 `VITE_API_BASE_URL` env var sets the API origin; defaults to same-origin (proxied in dev via `vite.config.ts`).
 
-**Club features** are split into `src/features/clubs/` with `clubApi.ts`, `clubUtils.ts`, `clubConstants.ts` and tab components (`MembersTab`, `AttendanceTab`, `FeesTab`, `LeaveRequestsTab`). Everything else lives in `src/`.
+**Club features** are split into `src/features/clubs/` with `clubApi.ts`, `clubUtils.ts`, `clubConstants.ts` and tab components (`MembersTab`, `AttendanceTab`, `FeesTab`, `AnnouncementsTab`, `RequestsTab`). The club workspace sidebar is grouped via `CLUB_TAB_GROUPS` in `clubConstants.ts`. `RequestsTab` handles both leave requests and tournament join requests; `LeaveRequestForm` is shared with the member portal. Everything else lives in `src/`.
 
 **Role system**: `AuthUserResponse.roles` is a string array (`GLOBAL_ADMIN`, `CLUB_MANAGER`, `MEMBER`). `GLOBAL_ADMIN` can use a "View as" selector to emulate other roles in the UI.
 
@@ -95,6 +95,8 @@ Seed admin credentials: `admin@karate-ops.local` / `Admin@123456`.
 **Realtime**: After any match state mutation, call `RealtimePublisher.publishMatch(MatchResponse)`. It pushes the full match response to `/topic/tatamis/{tatamiId}` and a dashboard snapshot to `/topic/tournaments/{tournamentId}/dashboard`. WebSocket endpoint: `/ws` (STOMP).
 
 **Service layer**: All domain logic is behind interfaces in `service/`; implementations in `service/impl/`. Repositories extend Spring Data JPA.
+
+**Concurrency**: Request decision flows (leave requests, tournament join requests, account requests, participant status) must lock the row first via the repository `findWithLockById(...)` methods (`@Lock(PESSIMISTIC_WRITE)`), then re-check the PENDING status inside the `@Transactional` method and throw `BusinessConflictException` if already decided. Duplicate-creation races are backstopped by partial unique indexes plus `saveAndFlush` with `DataIntegrityViolationException` translation.
 
 **Database migrations**: Flyway manages schema in `src/main/resources/db/migration/`. Naming convention: `V{n}__{description}.sql`. Never edit applied migrations; always add a new version.
 

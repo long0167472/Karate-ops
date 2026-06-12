@@ -1,8 +1,7 @@
 package com.karate.tournament.entity.enums;
 
-public enum LeaveRequestStatus {
+public enum TournamentJoinRequestStatus {
   PENDING,
   APPROVED,
-  REJECTED,
-  EXPIRED_AUTO_ABSENT
+  REJECTED
 }

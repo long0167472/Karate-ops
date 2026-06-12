@@ -6,8 +6,11 @@ import {
   ChevronRight,
   CircleDollarSign,
   Home,
+  Inbox,
+  Megaphone,
   PanelLeftClose,
   PanelLeftOpen,
+  Pin,
   Plus,
   Search,
   Shield,
@@ -18,12 +21,13 @@ import {
 import { type CSSProperties, type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./apiClient";
 import { fetchClubDirectory, fetchClubWorkspace } from "./features/clubs/clubApi";
+import { AnnouncementsTab } from "./features/clubs/components/AnnouncementsTab";
 import { AttendanceTab } from "./features/clubs/components/AttendanceTab";
 import { ClubActionsMenu } from "./features/clubs/components/ClubActionsMenu";
 import { FeesTab } from "./features/clubs/components/FeesTab";
-import { LeaveRequestsTab } from "./features/clubs/components/LeaveRequestsTab";
 import { MembersTab } from "./features/clubs/components/MembersTab";
-import { CLUB_TABS, MEMBER_ROLES, MEMBER_STATUSES, PAYMENT_STATUSES, WEEKDAYS, type ClubDrawer, type ClubTab } from "./features/clubs/clubConstants";
+import { RequestsTab } from "./features/clubs/components/RequestsTab";
+import { CLUB_TABS, CLUB_TAB_GROUPS, MEMBER_ROLES, MEMBER_STATUSES, PAYMENT_STATUSES, WEEKDAYS, type ClubDrawer, type ClubTab } from "./features/clubs/clubConstants";
 import {
   attendancePercent,
   errorMessage,
@@ -42,6 +46,7 @@ import type {
   AthleteResponse,
   AttendanceSessionResponse,
   AuthUserResponse,
+  ClubAnnouncementResponse,
   ClubFeeOverviewResponse,
   ClubMemberResponse,
   ClubRosterResponse,
@@ -51,7 +56,8 @@ import type {
   OrganizationAttendanceDashboardResponse,
   OrganizationDashboardOverviewResponse,
   OrganizationResponse,
-  PersonResponse
+  PersonResponse,
+  TournamentJoinRequestResponse
 } from "./types";
 import { cx } from "./utils";
 
@@ -79,6 +85,8 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
   const [schedule, setSchedule] = useState<ClubTrainingScheduleResponse | null>(null);
   const [athletes, setAthletes] = useState<AthleteResponse[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequestResponse[]>([]);
+  const [joinRequests, setJoinRequests] = useState<TournamentJoinRequestResponse[]>([]);
+  const [announcements, setAnnouncements] = useState<ClubAnnouncementResponse[]>([]);
   const [activeTab, setActiveTab] = useState<ClubTab>(CLUB_TABS.some((tab) => tab.id === initialTab) ? initialTab : "overview");
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [selectedDate, setSelectedDate] = useState(today());
@@ -114,6 +122,7 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
   const [rosterPersonId, setRosterPersonId] = useState("");
   const [sessionName, setSessionName] = useState("");
   const [scheduleForm, setScheduleForm] = useState({ name: "", daysOfWeek: [] as number[], startTime: "18:30", durationMinutes: 90, active: true });
+  const [announcementForm, setAnnouncementForm] = useState<{ id: string | null; title: string; content: string; pinned: boolean }>({ id: null, title: "", content: "", pinned: false });
 
   const isAdmin = hasRole(user, "GLOBAL_ADMIN");
   const userClubMember = useMemo(() => members.find((m) => m.userId === user.id), [members, user.id]);
@@ -172,13 +181,14 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
       });
       setAthletes(nextAthletes);
       setSelectedSessionId((current) => current || nextSessions[0]?.id || "");
-      try {
-        const nextLeaveRequests = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${id}/leave-requests`);
-        setLeaveRequests(nextLeaveRequests);
-      } catch (err) {
-        console.warn("Leave requests API not available:", err);
-        setLeaveRequests([]);
-      }
+      const [leaveResult, joinResult, announcementResult] = await Promise.allSettled([
+        apiGet<LeaveRequestResponse[]>(`/api/organizations/${id}/leave-requests`),
+        apiGet<TournamentJoinRequestResponse[]>(`/api/organizations/${id}/tournament-join-requests`),
+        apiGet<ClubAnnouncementResponse[]>(`/api/organizations/${id}/announcements`)
+      ]);
+      setLeaveRequests(leaveResult.status === "fulfilled" ? leaveResult.value : []);
+      setJoinRequests(joinResult.status === "fulfilled" ? joinResult.value : []);
+      setAnnouncements(announcementResult.status === "fulfilled" ? announcementResult.value : []);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -256,8 +266,13 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
     hiddenAttendance: members.filter((member) => !member.attendanceViewEnabled).length
   };
   const pendingAccountRequests = accountRequests.filter((request) => request.status === "PENDING").length;
+  const pendingLeaveRequests = leaveRequests.filter((request) => request.status === "PENDING").length;
+  const pendingJoinRequests = joinRequests.filter((request) => request.status === "PENDING").length;
+  const pendingRequestsTotal = pendingLeaveRequests + pendingJoinRequests;
   const healthWarnings = [
     pendingAccountRequests > 0 ? `${pendingAccountRequests} yêu cầu tài khoản đang chờ duyệt.` : "",
+    pendingLeaveRequests > 0 ? `${pendingLeaveRequests} đơn xin nghỉ đang chờ duyệt.` : "",
+    pendingJoinRequests > 0 ? `${pendingJoinRequests} yêu cầu tham gia giải đang chờ duyệt.` : "",
     members.length === 0 ? "CLB chưa có thành viên." : "",
     roster.length === 0 ? "Chưa có VĐV trong roster." : "",
     !schedule || schedule.daysOfWeek.length === 0 ? "Chưa thiết lập lịch tập cố định trong tuần." : "",
@@ -334,6 +349,55 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
     setActiveTab(tab);
     window.history.replaceState(null, "", `/clubs/${clubId}?tab=${tab}`);
   };
+
+  const openAnnouncementDrawer = (announcement?: ClubAnnouncementResponse) => {
+    setAnnouncementForm(announcement
+      ? { id: announcement.id, title: announcement.title, content: announcement.content, pinned: announcement.pinned }
+      : { id: null, title: "", content: "", pinned: false });
+    setDrawer("announcement");
+  };
+
+  const mergeAnnouncement = (next: ClubAnnouncementResponse) => {
+    setAnnouncements((current) => {
+      const replaced = current.some((item) => item.id === next.id)
+        ? current.map((item) => item.id === next.id ? next : item)
+        : [next, ...current];
+      return [...replaced].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt.localeCompare(a.createdAt));
+    });
+  };
+
+  const handleToggleAnnouncementPin = (announcement: ClubAnnouncementResponse) =>
+    submitNoEvent(async () => {
+      const updated = await apiPatch<ClubAnnouncementResponse>(`/api/organizations/${clubId}/announcements/${announcement.id}`, { pinned: !announcement.pinned });
+      mergeAnnouncement(updated);
+    }, setBusy, setError);
+
+  const handleDeleteAnnouncement = (announcement: ClubAnnouncementResponse) =>
+    submitNoEvent(async () => {
+      await apiDelete(`/api/organizations/${clubId}/announcements/${announcement.id}`);
+      setAnnouncements((current) => current.filter((item) => item.id !== announcement.id));
+    }, setBusy, setError);
+
+  const handleDecideLeave = (requestId: string, action: "approve" | "reject", decisionNote?: string) =>
+    submitNoEvent(async () => {
+      const updated = await apiPatch<LeaveRequestResponse>(`/api/organizations/${clubId}/leave-requests/${requestId}/${action}`, { decisionNote: decisionNote || undefined });
+      setLeaveRequests((current) => current.map((item) => item.id === updated.id ? updated : item));
+    }, setBusy, setError);
+
+  const handleDecideJoin = (requestId: string, action: "approve" | "reject", decisionNote?: string) =>
+    submitNoEvent(async () => {
+      const updated = await apiPatch<TournamentJoinRequestResponse>(`/api/organizations/${clubId}/tournament-join-requests/${requestId}/${action}`, { decisionNote: decisionNote || undefined });
+      setJoinRequests((current) => current.map((item) => item.id === updated.id ? updated : item));
+      if (action === "approve") {
+        // Approval may have created an athlete + roster entry on the server.
+        const [nextRoster, nextAthletes] = await Promise.all([
+          apiGet<ClubRosterResponse[]>(`/api/organizations/${clubId}/roster`),
+          apiGet<AthleteResponse[]>("/api/athletes")
+        ]);
+        setRoster(nextRoster);
+        setAthletes(nextAthletes.filter((athlete) => athlete.primaryOrganizationId === clubId));
+      }
+    }, setBusy, setError);
 
   if (!clubId) {
     const featuredClub = visibleClubs[0];
@@ -478,12 +542,23 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
             <div><dt>Email</dt><dd>{selectedOrg?.contactEmail || "Chưa cập nhật"}</dd></div>
           </dl>
           <nav className="club-tab-list">
-            {CLUB_TABS.map((tab) => (
-              <button key={tab.id} className={cx(activeTab === tab.id && "active")} onClick={() => setTab(tab.id)} title={tab.label}>
-                <b className="club-tab-code">{tabShort(tab.id)}</b>
-                <span>{tab.label}</span>
-                <small>{tab.hint}</small>
-              </button>
+            {CLUB_TAB_GROUPS.map((group) => (
+              <div className="club-tab-group" key={group.label}>
+                <span className="club-tab-group-label">{group.label}</span>
+                {group.tabs.map((tabId) => {
+                  const tab = CLUB_TABS.find((item) => item.id === tabId);
+                  if (!tab) return null;
+                  const badge = tabBadge(tab.id, { pendingRequestsTotal, pendingAccountRequests });
+                  return (
+                    <button key={tab.id} className={cx(activeTab === tab.id && "active")} onClick={() => setTab(tab.id)} title={tab.label}>
+                      <b className="club-tab-code">{tabShort(tab.id)}</b>
+                      <span>{tab.label}</span>
+                      <small>{tab.hint}</small>
+                      {badge > 0 ? <i className="club-tab-badge">{badge}</i> : null}
+                    </button>
+                  );
+                })}
+              </div>
             ))}
           </nav>
         </aside>
@@ -496,8 +571,8 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
             </div>
             <div className="club-command-actions">
               <button className="club-secondary-button" onClick={() => setDrawer("member")}><UserPlus size={18} /> Thêm thành viên</button>
-              <button className="club-secondary-button" onClick={() => setDrawer("roster")}><Award size={18} /> Thêm VĐV</button>
-              <button className="club-primary-button" onClick={() => setDrawer("schedule")}><CalendarCheck size={18} /> Sửa lịch tập</button>
+              <button className="club-secondary-button" onClick={() => setDrawer("schedule")}><CalendarCheck size={18} /> Sửa lịch tập</button>
+              <button className="club-primary-button" onClick={() => openAnnouncementDrawer()}><Megaphone size={18} /> Đăng thông báo</button>
               {selectedOrg && <ClubActionsMenu
                 club={selectedOrg}
                 userIsAdmin={isClubAdmin}
@@ -529,10 +604,16 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
                 </section>
 
                 <div className="club-bento-grid club-dashboard-grid">
-                  <HealthTile className="wide" icon={<Users />} label="Thành viên active" value={overview?.activeMembers ?? activeMembers.length} detail={`${members.length} hồ sơ trong CLB`} />
+                  <HealthTile className="span2" icon={<Users />} label="Thành viên active" value={overview?.activeMembers ?? activeMembers.length} detail={`${members.length} hồ sơ trong CLB`} />
                   <HealthTile icon={<Award />} label="VĐV active" value={overview?.activeAthletes ?? roster.length} detail="Sẵn sàng đăng ký giải" />
                   <HealthTile icon={<CalendarCheck />} label="Buổi tập" value={overview?.attendanceSessions ?? sessions.length} detail={schedule?.name || "Chưa có lịch cố định"} />
                   <HealthTile icon={<CircleDollarSign />} label="Dòng tiền ròng" value={formatMoneyShort(financeOverview?.summary.netCash)} detail={`${formatMoneyShort(financeOverview?.summary.totalOutstanding)} công nợ mở`} />
+                  <button className="club-health-tile club-health-tile-action" onClick={() => setTab("requests")}>
+                    <div><Inbox /></div>
+                    <span>Yêu cầu chờ duyệt</span>
+                    <strong>{pendingRequestsTotal}</strong>
+                    <p>{pendingLeaveRequests} xin nghỉ - {pendingJoinRequests} tham gia giải</p>
+                  </button>
 
                   <section className="club-attendance-dashboard-card">
                     <div className="club-dashboard-panel-head">
@@ -581,6 +662,34 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
                     )}
                   </section>
 
+                  <section className="club-announcement-preview-panel">
+                    <div className="club-dashboard-panel-head">
+                      <div>
+                        <span className="club-ops-kicker">Bảng tin</span>
+                        <h3>Thông báo mới nhất</h3>
+                      </div>
+                      <button className="club-secondary-button" onClick={() => setTab("announcements")}>Mở bảng tin</button>
+                    </div>
+                    {announcements.length > 0 ? (
+                      <div className="club-announcement-preview-list">
+                        {announcements.slice(0, 3).map((announcement) => (
+                          <article className="club-announcement-preview-row" key={announcement.id}>
+                            <div className="club-announcement-mark"><Megaphone size={16} /></div>
+                            <div>
+                              <strong>
+                                {announcement.pinned ? <Pin size={12} /> : null}
+                                {announcement.title}
+                              </strong>
+                              <span>{formatDate(announcement.createdAt)} - {announcement.content.length > 90 ? `${announcement.content.slice(0, 90)}...` : announcement.content}</span>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState title="Chưa có thông báo" text="Đăng thông báo để thành viên thấy ngay trong cổng thành viên." action={isClubAdmin ? "Đăng thông báo" : undefined} onAction={isClubAdmin ? () => openAnnouncementDrawer() : undefined} />
+                    )}
+                  </section>
+
                   <section className="club-readiness-panel">
                     <div className="club-dashboard-panel-head">
                       <div>
@@ -597,6 +706,7 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
                     <div className="club-dashboard-actions">
                       <button className="club-secondary-button" onClick={() => setDrawer("member")}><UserPlus size={18} /> Thêm thành viên</button>
                       <button className="club-secondary-button" onClick={() => setDrawer("roster")}><Award size={18} /> Thêm VĐV</button>
+                      <button className="club-secondary-button" onClick={() => setTab("requests")}><Inbox size={18} /> Duyệt yêu cầu</button>
                       <button className="club-primary-button" onClick={() => setDrawer("schedule")}><CalendarCheck size={18} /> Sửa lịch tập</button>
                     </div>
                   </section>
@@ -716,37 +826,30 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
                 />
               </motion.div>
             ) : null}
-            {!loadingClub && activeTab === "leaves" ? (
-              <LeaveRequestsTab
-                user={user}
+            {!loadingClub && activeTab === "announcements" ? (
+              <motion.div key="announcements" className="club-tab-content" {...pageMotion}>
+                <AnnouncementsTab
+                  isClubAdmin={isClubAdmin}
+                  announcements={announcements}
+                  busy={busy}
+                  error={error}
+                  onCreate={() => openAnnouncementDrawer()}
+                  onEdit={(announcement) => openAnnouncementDrawer(announcement)}
+                  onTogglePin={handleToggleAnnouncementPin}
+                  onDelete={handleDeleteAnnouncement}
+                />
+              </motion.div>
+            ) : null}
+            {!loadingClub && activeTab === "requests" ? (
+              <RequestsTab
+                key="requests"
                 isClubAdmin={isClubAdmin}
                 leaveRequests={leaveRequests}
+                joinRequests={joinRequests}
                 busy={busy}
                 error={error}
-                setBusy={setBusy}
-                setError={setError}
-                onApprove={(requestId, decisionNote) =>
-                  submitNoEvent(async () => {
-                    try {
-                      await apiPatch(`/api/organizations/${clubId}/leave-requests/${requestId}/approve`, { decisionNote });
-                      const updated = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${clubId}/leave-requests`);
-                      setLeaveRequests(updated);
-                    } catch (err) {
-                      console.warn("Leave requests API not available:", err);
-                    }
-                  }, setBusy, setError)
-                }
-                onReject={(requestId, decisionNote) =>
-                  submitNoEvent(async () => {
-                    try {
-                      await apiPatch(`/api/organizations/${clubId}/leave-requests/${requestId}/reject`, { decisionNote });
-                      const updated = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${clubId}/leave-requests`);
-                      setLeaveRequests(updated);
-                    } catch (err) {
-                      console.warn("Leave requests API not available:", err);
-                    }
-                  }, setBusy, setError)
-                }
+                onDecideLeave={handleDecideLeave}
+                onDecideJoin={handleDecideJoin}
               />
             ) : null}
           </AnimatePresence>
@@ -906,6 +1009,24 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
               active: scheduleForm.active
             });
             setSchedule(nextSchedule);
+            setDrawer(null);
+          })}
+        />
+      </ClubDrawer>
+
+      <ClubDrawer drawer={drawer === "announcement" ? "announcement" : null} title={announcementForm.id ? "Chỉnh sửa thông báo" : "Đăng thông báo CLB"} onClose={() => setDrawer(null)}>
+        <AnnouncementForm
+          busy={busy}
+          error={error}
+          form={announcementForm}
+          onChange={setAnnouncementForm}
+          onSubmit={(event) => submit(event, async () => {
+            const payload = { title: announcementForm.title.trim(), content: announcementForm.content.trim(), pinned: announcementForm.pinned };
+            const saved = announcementForm.id
+              ? await apiPatch<ClubAnnouncementResponse>(`/api/organizations/${clubId}/announcements/${announcementForm.id}`, payload)
+              : await apiPost<ClubAnnouncementResponse>(`/api/organizations/${clubId}/announcements`, payload);
+            mergeAnnouncement(saved);
+            setAnnouncementForm({ id: null, title: "", content: "", pinned: false });
             setDrawer(null);
           })}
         />
@@ -1093,6 +1214,42 @@ function ScheduleForm({ busy, error, scheduleForm, onChange, onSubmit }: {
   );
 }
 
+function AnnouncementForm({ busy, error, form, onChange, onSubmit }: {
+  busy: boolean;
+  error: string | null;
+  form: { id: string | null; title: string; content: string; pinned: boolean };
+  onChange: (value: { id: string | null; title: string; content: string; pinned: boolean }) => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return (
+    <form className="club-drawer-form" onSubmit={onSubmit}>
+      <Field label="Tiêu đề *">
+        <input value={form.title} maxLength={180} onChange={(event) => onChange({ ...form, title: event.target.value })} placeholder="VD: Nghỉ tập lễ 2/9" required />
+      </Field>
+      <Field label="Nội dung *">
+        <textarea
+          className="club-form-textarea"
+          value={form.content}
+          maxLength={4000}
+          rows={7}
+          onChange={(event) => onChange({ ...form, content: event.target.value })}
+          placeholder="Nội dung chi tiết gửi tới toàn bộ thành viên CLB..."
+          required
+        />
+      </Field>
+      <label className="club-toggle-row">
+        <input type="checkbox" checked={form.pinned} onChange={(event) => onChange({ ...form, pinned: event.target.checked })} />
+        <span>Ghim thông báo lên đầu bảng tin</span>
+      </label>
+      <p className="club-helper-text">Thành viên sẽ thấy thông báo này trong mục Thông báo ở cổng thành viên.</p>
+      {error ? <p className="club-form-error">{error}</p> : null}
+      <button className="club-primary-button" disabled={busy || !form.title.trim() || !form.content.trim()}>
+        {form.id ? "Lưu thay đổi" : "Đăng thông báo"}
+      </button>
+    </form>
+  );
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="club-field"><span>{label}</span>{children}</label>;
 }
@@ -1169,7 +1326,15 @@ function tabShort(tab: ClubTab) {
   if (tab === "members") return "TV";
   if (tab === "fees") return "TC";
   if (tab === "roster") return "VĐV";
+  if (tab === "announcements") return "TB";
+  if (tab === "requests") return "YC";
   return "ĐD";
+}
+
+function tabBadge(tab: ClubTab, counts: { pendingRequestsTotal: number; pendingAccountRequests: number }) {
+  if (tab === "requests") return counts.pendingRequestsTotal;
+  if (tab === "members") return counts.pendingAccountRequests;
+  return 0;
 }
 
 function emptyMemberForm() {

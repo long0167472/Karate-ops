@@ -1,13 +1,21 @@
-export type ClubTab = "overview" | "members" | "fees" | "roster" | "attendance" | "leaves";
-export type ClubDrawer = "club" | "member" | "roster" | "session" | "schedule" | null;
+export type ClubTab = "overview" | "members" | "fees" | "roster" | "attendance" | "announcements" | "requests";
+export type ClubDrawer = "club" | "member" | "roster" | "session" | "schedule" | "announcement" | null;
 
 export const CLUB_TABS: Array<{ id: ClubTab; label: string; hint: string }> = [
   { id: "overview", label: "Tổng quan", hint: "Sức khỏe CLB" },
-  { id: "members", label: "Thành viên", hint: "Người tập và nhân sự" },
-  { id: "fees", label: "Tài chính", hint: "Học phí và thu chi" },
-  { id: "roster", label: "VĐV", hint: "Hồ sơ thi đấu" },
   { id: "attendance", label: "Điểm danh", hint: "Buổi tập hôm nay" },
-  { id: "leaves", label: "Yêu cầu nghỉ", hint: "Duyệt đơn xin nghỉ" }
+  { id: "members", label: "Thành viên", hint: "Người tập và nhân sự" },
+  { id: "roster", label: "VĐV", hint: "Hồ sơ thi đấu" },
+  { id: "fees", label: "Tài chính", hint: "Học phí và thu chi" },
+  { id: "announcements", label: "Thông báo", hint: "Tin gửi tới thành viên" },
+  { id: "requests", label: "Yêu cầu", hint: "Xin nghỉ và tham gia giải" }
+];
+
+export const CLUB_TAB_GROUPS: Array<{ label: string; tabs: ClubTab[] }> = [
+  { label: "Vận hành", tabs: ["overview", "attendance"] },
+  { label: "Con người", tabs: ["members", "roster"] },
+  { label: "Tài chính", tabs: ["fees"] },
+  { label: "Giao tiếp", tabs: ["announcements", "requests"] }
 ];
 
 export const MEMBER_ROLES = ["OWNER", "MANAGER", "COACH", "ATHLETE", "PARENT", "STAFF"];
@@ -74,4 +82,20 @@ export const LEAVE_REQUEST_STATUS_LABELS: Record<string, string> = {
   APPROVED: "Đã duyệt",
   REJECTED: "Từ chối",
   EXPIRED_AUTO_ABSENT: "Quá hạn - Đánh vắng"
+};
+
+export const JOIN_REQUEST_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Chờ duyệt",
+  APPROVED: "Đã duyệt",
+  REJECTED: "Từ chối"
+};
+
+export const TOURNAMENT_STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Bản nháp",
+  REGISTRATION_OPEN: "Đang mở đăng ký",
+  REGISTRATION_CLOSED: "Đã đóng đăng ký",
+  DRAWING: "Đang bốc thăm",
+  RUNNING: "Đang diễn ra",
+  COMPLETED: "Đã kết thúc",
+  ARCHIVED: "Lưu trữ"
 };

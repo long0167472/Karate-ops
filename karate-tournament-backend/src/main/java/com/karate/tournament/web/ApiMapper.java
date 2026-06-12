@@ -8,7 +8,9 @@ import com.karate.tournament.entity.AttendanceLeaveRequest;
 import com.karate.tournament.entity.AttendanceSession;
 import com.karate.tournament.entity.AccountRequest;
 import com.karate.tournament.entity.Category;
+import com.karate.tournament.entity.ClubAnnouncement;
 import com.karate.tournament.entity.ClubRoster;
+import com.karate.tournament.entity.TournamentJoinRequest;
 import com.karate.tournament.entity.Entry;
 import com.karate.tournament.entity.KataVote;
 import com.karate.tournament.entity.KumiteMatchState;
@@ -31,8 +33,10 @@ import com.karate.tournament.dto.response.AttendanceSessionResponse;
 import com.karate.tournament.dto.response.AccountRequestResponse;
 import com.karate.tournament.dto.response.AthleteResponse;
 import com.karate.tournament.dto.response.CategoryResponse;
+import com.karate.tournament.dto.response.ClubAnnouncementResponse;
 import com.karate.tournament.dto.response.ClubMemberResponse;
 import com.karate.tournament.dto.response.ClubRosterResponse;
+import com.karate.tournament.dto.response.TournamentJoinRequestResponse;
 import com.karate.tournament.dto.response.EntryResponse;
 import com.karate.tournament.dto.response.KataVoteResponse;
 import com.karate.tournament.dto.response.KumiteStateResponse;
@@ -202,16 +206,57 @@ public class ApiMapper {
     Person person = request.member.person;
     return new LeaveRequestResponse(
         request.id,
-        request.session.id,
-        request.session.name,
-        request.session.organization.id,
-        request.session.organization.name,
+        request.session == null ? null : request.session.id,
+        request.session == null ? null : request.session.name,
+        request.organization.id,
+        request.organization.name,
+        request.member.id,
+        person == null ? request.member.user == null ? null : request.member.user.displayName : person.displayName,
+        request.requesterUser == null ? null : request.requesterUser.id,
+        request.decidedByUser == null ? null : request.decidedByUser.id,
+        request.requestType,
+        request.status,
+        request.reason,
+        request.fromDate,
+        request.toDate,
+        request.decisionNote,
+        request.decidedAt,
+        request.createdAt,
+        request.expiresAt
+    );
+  }
+
+  public ClubAnnouncementResponse announcement(ClubAnnouncement announcement) {
+    return new ClubAnnouncementResponse(
+        announcement.id,
+        announcement.organization.id,
+        announcement.organization.name,
+        announcement.title,
+        announcement.content,
+        announcement.pinned,
+        announcement.createdByUser == null ? null : announcement.createdByUser.id,
+        announcement.createdByUser == null ? null : announcement.createdByUser.displayName,
+        announcement.createdAt,
+        announcement.updatedAt
+    );
+  }
+
+  public TournamentJoinRequestResponse joinRequest(TournamentJoinRequest request) {
+    Person person = request.member.person;
+    return new TournamentJoinRequestResponse(
+        request.id,
+        request.tournament.id,
+        request.tournament.name,
+        request.tournament.startsOn,
+        request.tournament.status == null ? null : request.tournament.status.name(),
+        request.organization.id,
+        request.organization.name,
         request.member.id,
         person == null ? request.member.user == null ? null : request.member.user.displayName : person.displayName,
         request.requesterUser == null ? null : request.requesterUser.id,
         request.decidedByUser == null ? null : request.decidedByUser.id,
         request.status,
-        request.reason,
+        request.note,
         request.decisionNote,
         request.decidedAt,
         request.createdAt

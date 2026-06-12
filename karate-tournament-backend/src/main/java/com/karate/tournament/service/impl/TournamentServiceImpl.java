@@ -141,7 +141,8 @@ public class TournamentServiceImpl implements TournamentService {
   public TournamentParticipantResponse updateParticipantStatus(UUID tournamentId, UUID participantId, ParticipantStatusRequest request) {
     Tournament tournament = requireTournament(tournamentId);
     permissions.requireTournamentManage(tournament);
-    TournamentParticipant participant = participants.findByIdAndDeletedAtIsNull(participantId)
+    // Pessimistic lock: concurrent status transitions on the same delegation serialize.
+    TournamentParticipant participant = participants.findWithLockById(participantId)
         .orElseThrow(() -> new ResourceNotFoundException("Tournament participant not found: " + participantId));
     if (!participant.tournament.id.equals(tournamentId)) {
       throw new ResourceNotFoundException("Participant does not belong to tournament");

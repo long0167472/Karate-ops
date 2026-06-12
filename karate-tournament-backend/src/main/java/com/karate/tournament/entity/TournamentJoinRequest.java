@@ -1,7 +1,6 @@
 package com.karate.tournament.entity;
 
-import com.karate.tournament.entity.enums.LeaveRequestStatus;
-import com.karate.tournament.entity.enums.LeaveRequestType;
+import com.karate.tournament.entity.enums.TournamentJoinRequestStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,7 +10,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
-import java.time.LocalDate;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -21,15 +19,15 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "attendance_leave_requests")
-public class AttendanceLeaveRequest extends BaseEntity {
-  public static AttendanceLeaveRequest create() {
-    return new AttendanceLeaveRequest();
+@Table(name = "tournament_join_requests")
+public class TournamentJoinRequest extends BaseEntity {
+  public static TournamentJoinRequest create() {
+    return new TournamentJoinRequest();
   }
 
-  @ManyToOne(fetch = FetchType.EAGER)
-  @JoinColumn(name = "attendance_session_id")
-  public AttendanceSession session;
+  @ManyToOne(fetch = FetchType.EAGER, optional = false)
+  @JoinColumn(name = "tournament_id")
+  public Tournament tournament;
 
   @ManyToOne(fetch = FetchType.EAGER, optional = false)
   @JoinColumn(name = "organization_id")
@@ -49,23 +47,10 @@ public class AttendanceLeaveRequest extends BaseEntity {
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 40)
-  public LeaveRequestStatus status = LeaveRequestStatus.PENDING;
+  public TournamentJoinRequestStatus status = TournamentJoinRequestStatus.PENDING;
 
-  @Enumerated(EnumType.STRING)
-  @Column(name = "request_type", nullable = false, length = 40)
-  public LeaveRequestType requestType = LeaveRequestType.LEAVE_SESSION;
-
-  @Column(name = "from_date")
-  public LocalDate fromDate;
-
-  @Column(name = "to_date")
-  public LocalDate toDate;
-
-  @Column(name = "expires_at")
-  public Instant expiresAt;
-
-  @Column(nullable = false, length = 500)
-  public String reason;
+  @Column(length = 500)
+  public String note;
 
   @Column(name = "decision_note", length = 500)
   public String decisionNote;

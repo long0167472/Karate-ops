@@ -87,7 +87,8 @@ public class AccountRequestServiceImpl implements AccountRequestService {
     if (request.status() == AccountRequestStatus.PENDING) {
       throw new BadRequestException("Decision status must be APPROVED or REJECTED");
     }
-    AccountRequest accountRequest = accountRequests.findByIdAndDeletedAtIsNull(requestId)
+    // Pessimistic lock: concurrent decisions serialize so the account cannot be provisioned twice.
+    AccountRequest accountRequest = accountRequests.findWithLockById(requestId)
         .orElseThrow(() -> new ResourceNotFoundException("Account request not found: " + requestId));
     if (!accountRequest.organization.id.equals(organizationId)) {
       throw new ResourceNotFoundException("Account request does not belong to organization");

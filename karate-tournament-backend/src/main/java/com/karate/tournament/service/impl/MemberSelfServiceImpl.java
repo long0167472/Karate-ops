@@ -79,6 +79,7 @@ public class MemberSelfServiceImpl implements MemberSelfService {
         .collect(Collectors.toMap(record -> record.session.id, Function.identity(), (left, right) -> left));
     var leaveBySession = myMembers.stream()
         .flatMap(member -> leaveRequests.findByMember_IdAndDeletedAtIsNullOrderByCreatedAtDesc(member.id).stream())
+        .filter(request -> request.session != null)
         .collect(Collectors.toMap(request -> request.session.id, Function.identity(), (left, right) -> left));
     List<MemberAttendanceSessionResponse> responseRows = sessionRows.stream()
         .map(session -> {

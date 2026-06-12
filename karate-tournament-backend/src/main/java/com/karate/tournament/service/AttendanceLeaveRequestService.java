@@ -9,5 +9,8 @@ import java.util.UUID;
 public interface AttendanceLeaveRequestService {
   LeaveRequestResponse create(LeaveRequestCreateRequest request);
   List<LeaveRequestResponse> listByOrganization(UUID organizationId);
+  List<LeaveRequestResponse> listForCurrentUser();
   LeaveRequestResponse decide(UUID requestId, LeaveRequestDecisionRequest request);
+  LeaveRequestResponse decideForOrganization(UUID organizationId, UUID requestId, LeaveRequestDecisionRequest request);
+  void expireOverdueRequests();
 }
