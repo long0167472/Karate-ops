@@ -1,5 +1,5 @@
-export type ClubTab = "overview" | "members" | "fees" | "roster" | "attendance" | "leaves";
-export type ClubDrawer = "club" | "member" | "roster" | "session" | "schedule" | null;
+export type ClubTab = "overview" | "members" | "fees" | "roster" | "attendance" | "leaves" | "exams";
+export type ClubDrawer = "club" | "member" | "roster" | "session" | "schedule" | "exam" | null;
 
 export const CLUB_TABS: Array<{ id: ClubTab; label: string; hint: string }> = [
   { id: "overview", label: "Tổng quan", hint: "Sức khỏe CLB" },
@@ -7,7 +7,8 @@ export const CLUB_TABS: Array<{ id: ClubTab; label: string; hint: string }> = [
   { id: "fees", label: "Tài chính", hint: "Học phí và thu chi" },
   { id: "roster", label: "VĐV", hint: "Hồ sơ thi đấu" },
   { id: "attendance", label: "Điểm danh", hint: "Buổi tập hôm nay" },
-  { id: "leaves", label: "Yêu cầu nghỉ", hint: "Duyệt đơn xin nghỉ" }
+  { id: "leaves", label: "Yêu cầu nghỉ", hint: "Duyệt đơn xin nghỉ" },
+  { id: "exams", label: "Thi lên đai", hint: "Kỳ thi thăng cấp" }
 ];
 
 export const MEMBER_ROLES = ["OWNER", "MANAGER", "COACH", "ATHLETE", "PARENT", "STAFF"];
@@ -74,4 +75,40 @@ export const LEAVE_REQUEST_STATUS_LABELS: Record<string, string> = {
   APPROVED: "Đã duyệt",
   REJECTED: "Từ chối",
   EXPIRED_AUTO_ABSENT: "Quá hạn - Đánh vắng"
+};
+
+export const BELT_RANKS = [
+  { value: "WHITE", label: "Trắng" },
+  { value: "ORANGE", label: "Cam" },
+  { value: "BLUE", label: "Xanh dương" },
+  { value: "YELLOW", label: "Vàng" },
+  { value: "GREEN", label: "Xanh lá" },
+  { value: "PURPLE", label: "Tím" },
+  { value: "BROWN_3", label: "Nâu 3" },
+  { value: "BROWN_2", label: "Nâu 2" },
+  { value: "BROWN_1", label: "Nâu 1" },
+  { value: "BLACK_1", label: "Đen 1 Đẳng" },
+  { value: "BLACK_2", label: "Đen 2 Đẳng" },
+  { value: "BLACK_3", label: "Đen 3 Đẳng" },
+  { value: "BLACK_4", label: "Đen 4 Đẳng" },
+  { value: "BLACK_5", label: "Đen 5 Đẳng" }
+] as const;
+
+export const BELT_RANK_LABELS: Record<string, string> = Object.fromEntries(
+  BELT_RANKS.map((r) => [r.value, r.label])
+);
+
+export const EXAM_STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Bản nháp",
+  OPEN: "Đang mở",
+  IN_PROGRESS: "Đang diễn ra",
+  COMPLETED: "Đã hoàn thành",
+  CANCELLED: "Đã hủy"
+};
+
+export const EXAM_RESULT_LABELS: Record<string, string> = {
+  PENDING: "Chờ kết quả",
+  PASS: "Đạt",
+  FAIL: "Không đạt",
+  ABSENT: "Vắng mặt"
 };

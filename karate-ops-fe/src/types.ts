@@ -652,3 +652,33 @@ export interface ClubFeeOverviewResponse {
   expenses: ClubFinanceExpenseResponse[];
   summary: ClubFinanceSummaryResponse;
 }
+
+export type BeltExamStatus = "DRAFT" | "OPEN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type BeltExamResult = "PENDING" | "PASS" | "FAIL" | "ABSENT";
+
+export interface BeltExamCandidateResponse {
+  id: string;
+  examId: string;
+  organizationMemberId?: string;
+  athleteId?: string;
+  personId?: string;
+  displayName?: string;
+  currentBelt?: string;
+  targetBelt: string;
+  result: BeltExamResult;
+  examinerNote?: string;
+  beltApplied: boolean;
+}
+
+export interface BeltExamResponse {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  name: string;
+  status: BeltExamStatus;
+  examDate?: string;
+  location?: string;
+  examinerName?: string;
+  notes?: string;
+  candidates: BeltExamCandidateResponse[];
+}

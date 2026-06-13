@@ -19,6 +19,7 @@ import { type CSSProperties, type FormEvent, type ReactNode, useCallback, useEff
 import { apiDelete, apiGet, apiPatch, apiPost } from "./apiClient";
 import { fetchClubDirectory, fetchClubWorkspace } from "./features/clubs/clubApi";
 import { AttendanceTab } from "./features/clubs/components/AttendanceTab";
+import { BeltExamTab } from "./features/clubs/components/BeltExamTab";
 import { ClubActionsMenu } from "./features/clubs/components/ClubActionsMenu";
 import { FeesTab } from "./features/clubs/components/FeesTab";
 import { LeaveRequestsTab } from "./features/clubs/components/LeaveRequestsTab";
@@ -42,6 +43,7 @@ import type {
   AthleteResponse,
   AttendanceSessionResponse,
   AuthUserResponse,
+  BeltExamResponse,
   ClubFeeOverviewResponse,
   ClubMemberResponse,
   ClubRosterResponse,
@@ -79,6 +81,7 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
   const [schedule, setSchedule] = useState<ClubTrainingScheduleResponse | null>(null);
   const [athletes, setAthletes] = useState<AthleteResponse[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequestResponse[]>([]);
+  const [beltExams, setBeltExams] = useState<BeltExamResponse[]>([]);
   const [activeTab, setActiveTab] = useState<ClubTab>(CLUB_TABS.some((tab) => tab.id === initialTab) ? initialTab : "overview");
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [selectedDate, setSelectedDate] = useState(today());
@@ -154,7 +157,7 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
     setLoadingClub(true);
     setError(null);
     try {
-      const { overview: nextOverview, attendance: nextAttendance, accountRequests: nextAccountRequests, members: nextMembers, roster: nextRoster, sessions: nextSessions, schedule: nextSchedule, athletes: nextAthletes, finance: nextFinance } = await fetchClubWorkspace(id);
+      const { overview: nextOverview, attendance: nextAttendance, accountRequests: nextAccountRequests, members: nextMembers, roster: nextRoster, sessions: nextSessions, schedule: nextSchedule, athletes: nextAthletes, finance: nextFinance, beltExams: nextBeltExams } = await fetchClubWorkspace(id);
       setOverview(nextOverview);
       setAttendance(nextAttendance);
       setFinanceOverview(nextFinance || null);
@@ -171,6 +174,7 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
         active: nextSchedule.active
       });
       setAthletes(nextAthletes);
+      setBeltExams(nextBeltExams);
       setSelectedSessionId((current) => current || nextSessions[0]?.id || "");
       try {
         const nextLeaveRequests = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${id}/leave-requests`);
@@ -716,6 +720,20 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
                 />
               </motion.div>
             ) : null}
+            {!loadingClub && activeTab === "exams" ? (
+              <motion.div key="exams" {...pageMotion}>
+                <BeltExamTab
+                  clubId={clubId}
+                  roster={roster}
+                  athletes={athletes}
+                  beltExams={beltExams}
+                  setBeltExams={setBeltExams}
+                  busy={busy}
+                  setBusy={setBusy}
+                  setError={setError}
+                />
+              </motion.div>
+            ) : null}
             {!loadingClub && activeTab === "leaves" ? (
               <LeaveRequestsTab
                 user={user}
@@ -1169,7 +1187,10 @@ function tabShort(tab: ClubTab) {
   if (tab === "members") return "TV";
   if (tab === "fees") return "TC";
   if (tab === "roster") return "VĐV";
-  return "ĐD";
+  if (tab === "attendance") return "ĐD";
+  if (tab === "leaves") return "NP";
+  if (tab === "exams") return "LĐ";
+  return "?";
 }
 
 function emptyMemberForm() {

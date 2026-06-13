@@ -3,6 +3,8 @@ import type {
   AthleteResponse,
   AttendanceRecordResponse,
   AttendanceSessionResponse,
+  BeltExamCandidateResponse,
+  BeltExamResponse,
   ClubFeeOverviewResponse,
   ClubMemberResponse,
   ClubRosterResponse,
@@ -11,7 +13,7 @@ import type {
   OrganizationDashboardOverviewResponse,
   OrganizationResponse
 } from "../../types";
-import { apiGet, apiPatch, apiPost } from "../../apiClient";
+import { apiDelete, apiGet, apiPatch, apiPost } from "../../apiClient";
 
 export interface ClubDirectoryData {
   clubs: OrganizationResponse[];
@@ -28,6 +30,7 @@ export interface ClubWorkspaceData {
   schedule: ClubTrainingScheduleResponse;
   athletes: AthleteResponse[];
   finance: ClubFeeOverviewResponse;
+  beltExams: BeltExamResponse[];
 }
 
 export async function fetchClubDirectory(isAdmin: boolean, primaryOrganizationId?: string): Promise<ClubDirectoryData> {
@@ -41,7 +44,7 @@ export async function fetchClubDirectory(isAdmin: boolean, primaryOrganizationId
 }
 
 export async function fetchClubWorkspace(id: string): Promise<ClubWorkspaceData> {
-  const [overview, attendance, accountRequests, members, roster, sessions, schedule, athletes, finance] = await Promise.all([
+  const [overview, attendance, accountRequests, members, roster, sessions, schedule, athletes, finance, beltExams] = await Promise.all([
     apiGet<OrganizationDashboardOverviewResponse>(`/api/dashboard/organizations/${id}/overview`),
     apiGet<OrganizationAttendanceDashboardResponse>(`/api/dashboard/organizations/${id}/attendance`),
     apiGet<AccountRequestResponse[]>(`/api/organizations/${id}/account-requests`),
@@ -50,7 +53,8 @@ export async function fetchClubWorkspace(id: string): Promise<ClubWorkspaceData>
     apiGet<AttendanceSessionResponse[]>(`/api/organizations/${id}/attendance-sessions`),
     apiGet<ClubTrainingScheduleResponse>(`/api/organizations/${id}/training-schedule`),
     apiGet<AthleteResponse[]>("/api/athletes"),
-    apiGet<ClubFeeOverviewResponse>(`/api/organizations/${id}/finance/overview`)
+    apiGet<ClubFeeOverviewResponse>(`/api/organizations/${id}/finance/overview`),
+    apiGet<BeltExamResponse[]>(`/api/organizations/${id}/belt-exams`)
   ]);
   return {
     overview,
@@ -61,8 +65,37 @@ export async function fetchClubWorkspace(id: string): Promise<ClubWorkspaceData>
     sessions,
     schedule,
     athletes: athletes.filter((athlete) => athlete.primaryOrganizationId === id),
-    finance
+    finance,
+    beltExams
   };
+}
+
+export async function createBeltExam(orgId: string, body: { name: string; status?: string; examDate?: string; location?: string; examinerName?: string; notes?: string }) {
+  return apiPost<BeltExamResponse>(`/api/organizations/${orgId}/belt-exams`, body);
+}
+
+export async function updateBeltExam(examId: string, body: Partial<{ name: string; status: string; examDate: string; location: string; examinerName: string; notes: string }>) {
+  return apiPatch<BeltExamResponse>(`/api/belt-exams/${examId}`, body);
+}
+
+export async function deleteBeltExam(examId: string) {
+  return apiDelete(`/api/belt-exams/${examId}`);
+}
+
+export async function addBeltExamCandidate(examId: string, body: { athleteId?: string; organizationMemberId?: string; currentBelt?: string; targetBelt: string }) {
+  return apiPost<BeltExamCandidateResponse>(`/api/belt-exams/${examId}/candidates`, body);
+}
+
+export async function updateBeltExamCandidate(examId: string, candidateId: string, body: { result?: string; examinerNote?: string }) {
+  return apiPatch<BeltExamCandidateResponse>(`/api/belt-exams/${examId}/candidates/${candidateId}`, body);
+}
+
+export async function removeBeltExamCandidate(examId: string, candidateId: string) {
+  return apiDelete(`/api/belt-exams/${examId}/candidates/${candidateId}`);
+}
+
+export async function applyBeltExamResults(examId: string) {
+  return apiPost<BeltExamResponse>(`/api/belt-exams/${examId}/apply-results`, {});
 }
 
 export async function saveAttendanceRecord(sessionId: string, athleteId: string, record: AttendanceRecordResponse | undefined, status: string) {
