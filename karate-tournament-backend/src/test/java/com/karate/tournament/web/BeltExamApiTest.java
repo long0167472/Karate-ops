@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -176,6 +177,95 @@ class BeltExamApiTest {
 
     JsonNode examAfterRemove = getJson("/api/belt-exams/" + examId);
     assertThat(examAfterRemove.path("candidates")).hasSize(0);
+  }
+
+  @Test
+  void criteriaCrudAndManualScoringComputesTotals() throws Exception {
+    UUID org = id(postJson("/api/organizations", Map.of("name", "Scoring Club", "type", "CLUB"), 201));
+    UUID person = id(postJson("/api/persons", Map.of("displayName", "Pham Thi Score"), 201));
+    UUID athlete = id(postJson("/api/athletes", Map.of("personId", person.toString(), "belt", "WHITE"), 201));
+    postJson("/api/organizations/" + org + "/members", Map.of(
+        "personId", person.toString(),
+        "role", "ATHLETE",
+        "status", "ACTIVE"
+    ), 201);
+
+    UUID examId = id(postJson("/api/organizations/" + org + "/belt-exams", Map.of(
+        "name", "Kỳ thi có chấm điểm",
+        "status", "OPEN",
+        "passThreshold", 60
+    ), 201));
+
+    JsonNode kihon = postJson("/api/belt-exams/" + examId + "/criteria", Map.of(
+        "name", "Kihon",
+        "maxScore", 10,
+        "weight", 1
+    ), 201);
+    UUID kihonId = id(kihon);
+    assertThat(kihon.path("maxScore").asDouble()).isEqualTo(10.0);
+
+    UUID kataId = id(postJson("/api/belt-exams/" + examId + "/criteria", Map.of(
+        "name", "Kata",
+        "maxScore", 10,
+        "weight", 2
+    ), 201));
+
+    // edit a criterion
+    JsonNode editedKihon = patchJson("/api/belt-exams/" + examId + "/criteria/" + kihonId, Map.of(
+        "name", "Kihon cơ bản",
+        "maxScore", 10,
+        "weight", 1
+    ), 200);
+    assertThat(editedKihon.path("name").asText()).isEqualTo("Kihon cơ bản");
+
+    JsonNode examWithCriteria = getJson("/api/belt-exams/" + examId);
+    assertThat(examWithCriteria.path("criteria")).hasSize(2);
+
+    UUID candidateId = id(postJson("/api/belt-exams/" + examId + "/candidates", Map.of(
+        "athleteId", athlete.toString(),
+        "targetBelt", "ORANGE"
+    ), 201));
+
+    // score: kihon 8 (weight 1) + kata 9 (weight 2) = 8 + 18 = 26; max = 10*1 + 10*2 = 30
+    JsonNode afterKihon = putJson("/api/belt-exams/" + examId + "/candidates/" + candidateId + "/scores/" + kihonId, Map.of(
+        "score", 8
+    ), 200);
+    assertThat(afterKihon.path("totalScore").asDouble()).isEqualTo(8.0);
+
+    JsonNode afterKata = putJson("/api/belt-exams/" + examId + "/candidates/" + candidateId + "/scores/" + kataId, Map.of(
+        "score", 9,
+        "note", "Đẹp"
+    ), 200);
+    assertThat(afterKata.path("totalScore").asDouble()).isEqualTo(26.0);
+    assertThat(afterKata.path("maxTotalScore").asDouble()).isEqualTo(30.0);
+    assertThat(afterKata.path("scores")).hasSize(2);
+
+    // re-scoring updates instead of duplicating
+    JsonNode rescored = putJson("/api/belt-exams/" + examId + "/candidates/" + candidateId + "/scores/" + kihonId, Map.of(
+        "score", 10
+    ), 200);
+    assertThat(rescored.path("totalScore").asDouble()).isEqualTo(28.0);
+    assertThat(rescored.path("scores")).hasSize(2);
+
+    // score above the criterion max is rejected
+    putJson("/api/belt-exams/" + examId + "/candidates/" + candidateId + "/scores/" + kihonId, Map.of(
+        "score", 11
+    ), 400);
+
+    // remove a criterion
+    mvc.perform(delete("/api/belt-exams/" + examId + "/criteria/" + kataId))
+        .andExpect(status().isNoContent());
+    JsonNode examAfterRemove = getJson("/api/belt-exams/" + examId);
+    assertThat(examAfterRemove.path("criteria")).hasSize(1);
+  }
+
+  private JsonNode putJson(String url, Object body, int expectedStatus) throws Exception {
+    String content = mvc.perform(put(url)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(body)))
+        .andExpect(status().is(expectedStatus))
+        .andReturn().getResponse().getContentAsString();
+    return unwrap(content, expectedStatus);
   }
 
   private JsonNode postJson(String url, Object body, int expectedStatus) throws Exception {

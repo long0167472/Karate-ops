@@ -3,8 +3,11 @@ package com.karate.tournament.service;
 import com.karate.tournament.dto.request.BeltExamCandidateRequest;
 import com.karate.tournament.dto.request.BeltExamCandidateUpdateRequest;
 import com.karate.tournament.dto.request.BeltExamCreateRequest;
+import com.karate.tournament.dto.request.BeltExamCriterionRequest;
+import com.karate.tournament.dto.request.BeltExamScoreRequest;
 import com.karate.tournament.dto.request.BeltExamUpdateRequest;
 import com.karate.tournament.dto.response.BeltExamCandidateResponse;
+import com.karate.tournament.dto.response.BeltExamCriterionResponse;
 import com.karate.tournament.dto.response.BeltExamResponse;
 import java.util.List;
 import java.util.UUID;
@@ -19,4 +22,9 @@ public interface BeltExamService {
   BeltExamCandidateResponse updateCandidate(UUID examId, UUID candidateId, BeltExamCandidateUpdateRequest request);
   void removeCandidate(UUID examId, UUID candidateId);
   BeltExamResponse applyResults(UUID examId);
+
+  BeltExamCriterionResponse addCriterion(UUID examId, BeltExamCriterionRequest request);
+  BeltExamCriterionResponse updateCriterion(UUID examId, UUID criterionId, BeltExamCriterionRequest request);
+  void removeCriterion(UUID examId, UUID criterionId);
+  BeltExamCandidateResponse scoreCandidate(UUID examId, UUID candidateId, UUID criterionId, BeltExamScoreRequest request);
 }

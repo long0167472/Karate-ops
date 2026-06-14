@@ -1,15 +1,20 @@
-import { Award, ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Award, ChevronDown, ChevronRight, ListChecks, Pencil, Plus, Trash2 } from "lucide-react";
 import { type Dispatch, type FormEvent, type SetStateAction, useState } from "react";
-import type { AthleteResponse, BeltExamCandidateResponse, BeltExamResponse, ClubRosterResponse } from "../../../types";
+import { apiGet } from "../../../apiClient";
+import type { AthleteResponse, BeltExamCandidateResponse, BeltExamCriterionResponse, BeltExamResponse, ClubRosterResponse } from "../../../types";
 import { cx } from "../../../utils";
 import {
   addBeltExamCandidate,
+  addBeltExamCriterion,
   applyBeltExamResults,
   createBeltExam,
   deleteBeltExam,
   removeBeltExamCandidate,
+  removeBeltExamCriterion,
+  scoreBeltExamCandidate,
   updateBeltExam,
-  updateBeltExamCandidate
+  updateBeltExamCandidate,
+  updateBeltExamCriterion
 } from "../clubApi";
 import { BELT_RANK_LABELS, BELT_RANKS, EXAM_RESULT_LABELS, EXAM_STATUS_LABELS } from "../clubConstants";
 import { errorMessage, formatDate } from "../clubUtils";
@@ -28,8 +33,11 @@ interface BeltExamTabProps {
 export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams, busy, setBusy, setError }: BeltExamTabProps) {
   const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: "", examDate: "", location: "", examinerName: "", notes: "" });
+  const [createForm, setCreateForm] = useState({ name: "", examDate: "", location: "", examinerName: "", passThreshold: "", notes: "" });
   const [targetBelts, setTargetBelts] = useState<Record<string, string>>({});
+  const [criterionForm, setCriterionForm] = useState({ name: "", maxScore: "10", weight: "1" });
+  const [editingCriterionId, setEditingCriterionId] = useState<string | null>(null);
+  const [showCriterionForm, setShowCriterionForm] = useState(false);
 
   const selectedExam = beltExams.find((e) => e.id === selectedExamId) ?? null;
 
@@ -49,6 +57,11 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
     setBeltExams((prev) => prev.map((e) => e.id === updated.id ? updated : e));
   }
 
+  async function refreshExam(examId: string) {
+    const refreshed = await apiGet<BeltExamResponse>(`/api/belt-exams/${examId}`);
+    patchExam(refreshed);
+  }
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     if (!createForm.name.trim()) return;
@@ -59,10 +72,11 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
         examDate: createForm.examDate || undefined,
         location: createForm.location || undefined,
         examinerName: createForm.examinerName || undefined,
+        passThreshold: createForm.passThreshold ? Number(createForm.passThreshold) : undefined,
         notes: createForm.notes || undefined
       });
       setBeltExams((prev) => [created, ...prev]);
-      setCreateForm({ name: "", examDate: "", location: "", examinerName: "", notes: "" });
+      setCreateForm({ name: "", examDate: "", location: "", examinerName: "", passThreshold: "", notes: "" });
       setShowCreateForm(false);
       setSelectedExamId(created.id);
     });
@@ -89,15 +103,8 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
     if (!targetBelt) return;
     const athlete = athletes.find((a) => a.id === athleteId);
     await run(async () => {
-      await addBeltExamCandidate(selectedExamId, {
-        athleteId,
-        currentBelt: athlete?.belt,
-        targetBelt
-      });
-      const refreshed = await import("../../../apiClient").then(({ apiGet }) =>
-        apiGet<BeltExamResponse>(`/api/belt-exams/${selectedExamId}`)
-      );
-      patchExam(refreshed);
+      await addBeltExamCandidate(selectedExamId, { athleteId, currentBelt: athlete?.belt, targetBelt });
+      await refreshExam(selectedExamId);
       setTargetBelts((prev) => { const next = { ...prev }; delete next[athleteId]; return next; });
     });
   }
@@ -105,17 +112,14 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
   async function handleUpdateResult(examId: string, candidateId: string, result: string) {
     await run(async () => {
       await updateBeltExamCandidate(examId, candidateId, { result });
-      const refreshed = await import("../../../apiClient").then(({ apiGet }) =>
-        apiGet<BeltExamResponse>(`/api/belt-exams/${examId}`)
-      );
-      patchExam(refreshed);
+      await refreshExam(examId);
     });
   }
 
   async function handleRemoveCandidate(examId: string, candidateId: string) {
     await run(async () => {
       await removeBeltExamCandidate(examId, candidateId);
-      setBeltExams((prev) => prev.map((e) => e.id !== examId ? e : { ...e, candidates: e.candidates.filter((c) => c.id !== candidateId) }));
+      await refreshExam(examId);
     });
   }
 
@@ -126,8 +130,52 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
     });
   }
 
+  async function handleSaveCriterion(e: FormEvent) {
+    e.preventDefault();
+    if (!selectedExamId || !criterionForm.name.trim()) return;
+    const body = {
+      name: criterionForm.name.trim(),
+      maxScore: criterionForm.maxScore ? Number(criterionForm.maxScore) : undefined,
+      weight: criterionForm.weight ? Number(criterionForm.weight) : undefined
+    };
+    await run(async () => {
+      if (editingCriterionId) {
+        await updateBeltExamCriterion(selectedExamId, editingCriterionId, body);
+      } else {
+        await addBeltExamCriterion(selectedExamId, body);
+      }
+      await refreshExam(selectedExamId);
+      setCriterionForm({ name: "", maxScore: "10", weight: "1" });
+      setEditingCriterionId(null);
+      setShowCriterionForm(false);
+    });
+  }
+
+  function startEditCriterion(c: BeltExamCriterionResponse) {
+    setCriterionForm({ name: c.name, maxScore: String(c.maxScore), weight: String(c.weight) });
+    setEditingCriterionId(c.id);
+    setShowCriterionForm(true);
+  }
+
+  async function handleRemoveCriterion(examId: string, criterionId: string) {
+    await run(async () => {
+      await removeBeltExamCriterion(examId, criterionId);
+      await refreshExam(examId);
+    });
+  }
+
+  async function handleScore(examId: string, candidateId: string, criterionId: string, value: string) {
+    const num = Number(value);
+    if (value === "" || Number.isNaN(num)) return;
+    await run(async () => {
+      await scoreBeltExamCandidate(examId, candidateId, criterionId, { score: num });
+      await refreshExam(examId);
+    });
+  }
+
   const candidateAthleteIds = new Set(selectedExam?.candidates.map((c) => c.athleteId).filter(Boolean) as string[]);
   const eligibleRoster = roster.filter((r) => !candidateAthleteIds.has(r.athleteId));
+  const editable = selectedExam ? selectedExam.status !== "COMPLETED" && selectedExam.status !== "CANCELLED" : false;
 
   return (
     <div className="club-tab-content">
@@ -160,6 +208,10 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
             <label>
               <span>Giám khảo</span>
               <input type="text" value={createForm.examinerName} onChange={(e) => setCreateForm({ ...createForm, examinerName: e.target.value })} placeholder="Tên HLV / giám khảo" />
+            </label>
+            <label>
+              <span>Điểm sàn đạt (tổng điểm tối thiểu)</span>
+              <input type="number" min={0} step="0.5" value={createForm.passThreshold} onChange={(e) => setCreateForm({ ...createForm, passThreshold: e.target.value })} placeholder="VD: 60" />
             </label>
           </div>
           <label>
@@ -210,6 +262,7 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
                 {selectedExam.examDate ? <p>Ngày thi: <strong>{formatDate(selectedExam.examDate)}</strong></p> : null}
                 {selectedExam.location ? <p>Địa điểm: <strong>{selectedExam.location}</strong></p> : null}
                 {selectedExam.examinerName ? <p>Giám khảo: <strong>{selectedExam.examinerName}</strong></p> : null}
+                {selectedExam.passThreshold != null ? <p>Điểm sàn đạt: <strong>{selectedExam.passThreshold}</strong></p> : null}
               </div>
               <div className="club-exam-actions">
                 <select
@@ -222,20 +275,12 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
                   ))}
                 </select>
                 {selectedExam.status === "COMPLETED" ? (
-                  <button
-                    className="club-primary-button"
-                    disabled={busy}
-                    onClick={() => handleApplyResults(selectedExam.id)}
-                  >
+                  <button className="club-primary-button" disabled={busy} onClick={() => handleApplyResults(selectedExam.id)}>
                     <Award size={16} /> Áp dụng kết quả
                   </button>
                 ) : null}
-                {selectedExam.status !== "COMPLETED" && selectedExam.status !== "CANCELLED" ? (
-                  <button
-                    className="club-danger-button"
-                    disabled={busy}
-                    onClick={() => handleDeleteExam(selectedExam.id)}
-                  >
+                {editable ? (
+                  <button className="club-danger-button" disabled={busy} onClick={() => handleDeleteExam(selectedExam.id)}>
                     <Trash2 size={16} />
                   </button>
                 ) : null}
@@ -246,26 +291,138 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
               <Metric label="Tổng thí sinh" value={selectedExam.candidates.length} />
               <Metric label="Đạt" value={selectedExam.candidates.filter((c) => c.result === "PASS").length} />
               <Metric label="Không đạt" value={selectedExam.candidates.filter((c) => c.result === "FAIL").length} />
-              <Metric label="Đã áp dụng" value={selectedExam.candidates.filter((c) => c.beltApplied).length} />
+              <Metric label="Tiêu chí" value={selectedExam.criteria.length} />
             </div>
 
-            {selectedExam.candidates.length > 0 ? (
-              <div className="club-exam-candidates">
-                <h4>Danh sách thí sinh</h4>
-                {selectedExam.candidates.map((c) => (
-                  <CandidateRow
-                    key={c.id}
-                    candidate={c}
-                    exam={selectedExam}
-                    busy={busy}
-                    onUpdateResult={(result) => handleUpdateResult(selectedExam.id, c.id, result)}
-                    onRemove={() => handleRemoveCandidate(selectedExam.id, c.id)}
-                  />
-                ))}
+            {/* Criteria management */}
+            <div className="club-exam-criteria">
+              <div className="club-section-head">
+                <div>
+                  <span className="club-ops-kicker"><ListChecks size={14} /> Tiêu chí chấm điểm</span>
+                </div>
+                {editable ? (
+                  <button className="club-secondary-button" onClick={() => { setShowCriterionForm(!showCriterionForm); setEditingCriterionId(null); setCriterionForm({ name: "", maxScore: "10", weight: "1" }); }}>
+                    <Plus size={16} /> Thêm tiêu chí
+                  </button>
+                ) : null}
               </div>
+
+              {showCriterionForm && editable ? (
+                <form className="club-criterion-form" onSubmit={handleSaveCriterion}>
+                  <input type="text" value={criterionForm.name} onChange={(e) => setCriterionForm({ ...criterionForm, name: e.target.value })} placeholder="Tên tiêu chí (VD: Kihon, Kata, Kumite)" required />
+                  <input type="number" min={0.5} step="0.5" value={criterionForm.maxScore} onChange={(e) => setCriterionForm({ ...criterionForm, maxScore: e.target.value })} placeholder="Điểm tối đa" title="Điểm tối đa" />
+                  <input type="number" min={0.5} step="0.5" value={criterionForm.weight} onChange={(e) => setCriterionForm({ ...criterionForm, weight: e.target.value })} placeholder="Hệ số" title="Hệ số" />
+                  <button type="submit" className="club-primary-button" disabled={busy || !criterionForm.name.trim()}>{editingCriterionId ? "Lưu" : "Thêm"}</button>
+                  <button type="button" className="club-secondary-button" onClick={() => { setShowCriterionForm(false); setEditingCriterionId(null); }}>Hủy</button>
+                </form>
+              ) : null}
+
+              {selectedExam.criteria.length > 0 ? (
+                <div className="club-criterion-list">
+                  {selectedExam.criteria.map((c) => (
+                    <div key={c.id} className="club-criterion-chip">
+                      <strong>{c.name}</strong>
+                      <span>tối đa {c.maxScore}{c.weight !== 1 ? ` ×${c.weight}` : ""}</span>
+                      {editable ? (
+                        <span className="club-criterion-chip-actions">
+                          <button className="club-icon-button" disabled={busy} onClick={() => startEditCriterion(c)} title="Sửa"><Pencil size={14} /></button>
+                          <button className="club-icon-button" disabled={busy} onClick={() => handleRemoveCriterion(selectedExam.id, c.id)} title="Xóa"><Trash2 size={14} /></button>
+                        </span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="club-muted-text">Chưa có tiêu chí. Thêm tiêu chí để bắt đầu chấm điểm chi tiết.</p>
+              )}
+            </div>
+
+            {/* Scoring grid */}
+            {selectedExam.candidates.length > 0 ? (
+              selectedExam.criteria.length > 0 ? (
+                <div className="club-exam-scoring">
+                  <h4>Bảng chấm điểm</h4>
+                  <div className="club-scoring-table-wrap">
+                    <table className="club-scoring-table">
+                      <thead>
+                        <tr>
+                          <th>Thí sinh</th>
+                          {selectedExam.criteria.map((c) => <th key={c.id} title={`Tối đa ${c.maxScore}`}>{c.name}</th>)}
+                          <th>Tổng</th>
+                          <th>Kết quả</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedExam.candidates.map((cand) => {
+                          const passed = selectedExam.passThreshold != null && cand.totalScore >= selectedExam.passThreshold;
+                          return (
+                            <tr key={cand.id}>
+                              <td className="club-scoring-name">
+                                <strong>{cand.displayName ?? "—"}</strong>
+                                <span>{cand.currentBelt ? (BELT_RANK_LABELS[cand.currentBelt] ?? cand.currentBelt) : "—"} → {BELT_RANK_LABELS[cand.targetBelt] ?? cand.targetBelt}</span>
+                              </td>
+                              {selectedExam.criteria.map((c) => {
+                                const score = cand.scores.find((s) => s.criterionId === c.id);
+                                return (
+                                  <td key={c.id}>
+                                    <input
+                                      className="club-score-input"
+                                      type="number"
+                                      min={0}
+                                      max={c.maxScore}
+                                      step="0.5"
+                                      disabled={busy || selectedExam.status === "CANCELLED"}
+                                      defaultValue={score ? score.score : ""}
+                                      onBlur={(e) => { if (e.target.value !== String(score?.score ?? "")) handleScore(selectedExam.id, cand.id, c.id, e.target.value); }}
+                                    />
+                                  </td>
+                                );
+                              })}
+                              <td className={cx("club-scoring-total", selectedExam.passThreshold != null && (passed ? "pass" : "fail"))}>
+                                {cand.totalScore}/{cand.maxTotalScore}
+                              </td>
+                              <td>
+                                <ResultControl
+                                  candidate={cand}
+                                  editable={editable}
+                                  busy={busy}
+                                  onUpdateResult={(result) => handleUpdateResult(selectedExam.id, cand.id, result)}
+                                  onRemove={() => handleRemoveCandidate(selectedExam.id, cand.id)}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="club-exam-candidates">
+                  <h4>Danh sách thí sinh</h4>
+                  {selectedExam.candidates.map((cand) => (
+                    <div key={cand.id} className="club-exam-candidate-row">
+                      <div className="club-person-cell">
+                        <div className="club-avatar">{(cand.displayName ?? "?").charAt(0).toUpperCase()}</div>
+                        <div>
+                          <strong>{cand.displayName ?? "—"}</strong>
+                          <span>{cand.currentBelt ? (BELT_RANK_LABELS[cand.currentBelt] ?? cand.currentBelt) : "—"} → <b>{BELT_RANK_LABELS[cand.targetBelt] ?? cand.targetBelt}</b></span>
+                        </div>
+                      </div>
+                      <ResultControl
+                        candidate={cand}
+                        editable={editable}
+                        busy={busy}
+                        onUpdateResult={(result) => handleUpdateResult(selectedExam.id, cand.id, result)}
+                        onRemove={() => handleRemoveCandidate(selectedExam.id, cand.id)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )
             ) : null}
 
-            {selectedExam.status !== "COMPLETED" && selectedExam.status !== "CANCELLED" && eligibleRoster.length > 0 ? (
+            {editable && eligibleRoster.length > 0 ? (
               <div className="club-exam-add-candidates">
                 <h4>Đăng ký thí sinh</h4>
                 {eligibleRoster.map((r) => {
@@ -280,22 +437,11 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
                         </div>
                       </div>
                       <div className="club-exam-add-actions">
-                        <select
-                          value={targetBelts[r.athleteId] ?? ""}
-                          onChange={(e) => setTargetBelts((prev) => ({ ...prev, [r.athleteId]: e.target.value }))}
-                        >
+                        <select value={targetBelts[r.athleteId] ?? ""} onChange={(e) => setTargetBelts((prev) => ({ ...prev, [r.athleteId]: e.target.value }))}>
                           <option value="">-- Chọn đai mục tiêu --</option>
-                          {BELT_RANKS.map((rank) => (
-                            <option key={rank.value} value={rank.value}>{rank.label}</option>
-                          ))}
+                          {BELT_RANKS.map((rank) => <option key={rank.value} value={rank.value}>{rank.label}</option>)}
                         </select>
-                        <button
-                          className="club-secondary-button"
-                          disabled={busy || !targetBelts[r.athleteId]}
-                          onClick={() => handleAddCandidate(r.athleteId)}
-                        >
-                          Đăng ký
-                        </button>
+                        <button className="club-secondary-button" disabled={busy || !targetBelts[r.athleteId]} onClick={() => handleAddCandidate(r.athleteId)}>Đăng ký</button>
                       </div>
                     </div>
                   );
@@ -314,53 +460,35 @@ export function BeltExamTab({ clubId, roster, athletes, beltExams, setBeltExams,
   );
 }
 
-function CandidateRow({ candidate, exam, busy, onUpdateResult, onRemove }: {
+function ResultControl({ candidate, editable, busy, onUpdateResult, onRemove }: {
   candidate: BeltExamCandidateResponse;
-  exam: BeltExamResponse;
+  editable: boolean;
   busy: boolean;
   onUpdateResult: (result: string) => Promise<void>;
   onRemove: () => Promise<void>;
 }) {
-  const canEdit = exam.status !== "COMPLETED" && exam.status !== "CANCELLED";
+  if (!editable) {
+    return (
+      <span className={cx("club-exam-result-chip", candidate.result.toLowerCase())}>
+        {EXAM_RESULT_LABELS[candidate.result]}{candidate.beltApplied ? " ✓" : ""}
+      </span>
+    );
+  }
   return (
-    <div className="club-exam-candidate-row">
-      <div className="club-person-cell">
-        <div className="club-avatar">{(candidate.displayName ?? "?").charAt(0).toUpperCase()}</div>
-        <div>
-          <strong>{candidate.displayName ?? "—"}</strong>
-          <span>
-            {candidate.currentBelt ? (BELT_RANK_LABELS[candidate.currentBelt] ?? candidate.currentBelt) : "Chưa có đai"}
-            {" → "}
-            <b>{BELT_RANK_LABELS[candidate.targetBelt] ?? candidate.targetBelt}</b>
-          </span>
-        </div>
-      </div>
-      <div className="club-exam-candidate-actions">
-        {canEdit ? (
-          <div className="club-attendance-actions">
-            {(["PASS", "FAIL", "ABSENT", "PENDING"] as const).map((result) => (
-              <button
-                key={result}
-                className={cx("attendance-choice", candidate.result === result && "active", result.toLowerCase())}
-                disabled={busy}
-                onClick={() => onUpdateResult(result)}
-              >
-                {EXAM_RESULT_LABELS[result]}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <span className={cx("club-exam-result-chip", candidate.result.toLowerCase())}>
-            {EXAM_RESULT_LABELS[candidate.result]}
-            {candidate.beltApplied ? " ✓" : ""}
-          </span>
-        )}
-        {canEdit ? (
-          <button className="club-icon-button" disabled={busy} onClick={onRemove} title="Xóa thí sinh">
-            <Trash2 size={16} />
+    <div className="club-exam-candidate-actions">
+      <div className="club-attendance-actions">
+        {(["PASS", "FAIL", "ABSENT", "PENDING"] as const).map((result) => (
+          <button
+            key={result}
+            className={cx("attendance-choice", candidate.result === result && "active", result.toLowerCase())}
+            disabled={busy}
+            onClick={() => onUpdateResult(result)}
+          >
+            {EXAM_RESULT_LABELS[result]}
           </button>
-        ) : null}
+        ))}
       </div>
+      <button className="club-icon-button" disabled={busy} onClick={onRemove} title="Xóa thí sinh"><Trash2 size={16} /></button>
     </div>
   );
 }

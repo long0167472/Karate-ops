@@ -5,12 +5,18 @@ import com.karate.tournament.auth.PermissionService;
 import com.karate.tournament.dto.request.BeltExamCandidateRequest;
 import com.karate.tournament.dto.request.BeltExamCandidateUpdateRequest;
 import com.karate.tournament.dto.request.BeltExamCreateRequest;
+import com.karate.tournament.dto.request.BeltExamCriterionRequest;
+import com.karate.tournament.dto.request.BeltExamScoreRequest;
 import com.karate.tournament.dto.request.BeltExamUpdateRequest;
 import com.karate.tournament.dto.response.BeltExamCandidateResponse;
+import com.karate.tournament.dto.response.BeltExamCriterionResponse;
 import com.karate.tournament.dto.response.BeltExamResponse;
+import com.karate.tournament.dto.response.BeltExamScoreResponse;
 import com.karate.tournament.entity.Athlete;
 import com.karate.tournament.entity.BeltExam;
 import com.karate.tournament.entity.BeltExamCandidate;
+import com.karate.tournament.entity.BeltExamCriterion;
+import com.karate.tournament.entity.BeltExamScore;
 import com.karate.tournament.entity.Organization;
 import com.karate.tournament.entity.OrganizationMember;
 import com.karate.tournament.entity.Person;
@@ -22,10 +28,13 @@ import com.karate.tournament.exception.BusinessConflictException;
 import com.karate.tournament.exception.ResourceNotFoundException;
 import com.karate.tournament.repository.AthleteRepository;
 import com.karate.tournament.repository.BeltExamCandidateRepository;
+import com.karate.tournament.repository.BeltExamCriterionRepository;
 import com.karate.tournament.repository.BeltExamRepository;
+import com.karate.tournament.repository.BeltExamScoreRepository;
 import com.karate.tournament.repository.OrganizationMemberRepository;
 import com.karate.tournament.repository.OrganizationRepository;
 import com.karate.tournament.service.BeltExamService;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -36,6 +45,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class BeltExamServiceImpl implements BeltExamService {
   private final BeltExamRepository exams;
   private final BeltExamCandidateRepository candidates;
+  private final BeltExamCriterionRepository criteria;
+  private final BeltExamScoreRepository scores;
   private final OrganizationRepository organizations;
   private final OrganizationMemberRepository members;
   private final AthleteRepository athletes;
@@ -69,6 +80,7 @@ public class BeltExamServiceImpl implements BeltExamService {
     exam.examDate = request.examDate();
     exam.location = request.location();
     exam.examinerName = request.examinerName();
+    exam.passThreshold = request.passThreshold();
     exam.notes = request.notes();
     return toResponse(exams.save(exam));
   }
@@ -85,6 +97,7 @@ public class BeltExamServiceImpl implements BeltExamService {
     if (request.examDate() != null) exam.examDate = request.examDate();
     if (request.location() != null) exam.location = request.location();
     if (request.examinerName() != null) exam.examinerName = request.examinerName();
+    if (request.passThreshold() != null) exam.passThreshold = request.passThreshold();
     if (request.notes() != null) exam.notes = request.notes();
     return toResponse(exam);
   }
@@ -165,11 +178,104 @@ public class BeltExamServiceImpl implements BeltExamService {
     return toResponse(exam);
   }
 
+  @Transactional
+  public BeltExamCriterionResponse addCriterion(UUID examId, BeltExamCriterionRequest request) {
+    BeltExam exam = requireExam(examId);
+    permissions.requireAttendanceManage(exam.organization.id);
+    if (exam.status == BeltExamStatus.COMPLETED || exam.status == BeltExamStatus.CANCELLED) {
+      throw new BusinessConflictException("Cannot change criteria of a " + exam.status.name().toLowerCase() + " exam");
+    }
+    BeltExamCriterion criterion = BeltExamCriterion.create();
+    criterion.exam = exam;
+    applyCriterion(criterion, request);
+    if (request.displayOrder() == null) {
+      criterion.displayOrder = criteria.findByExam_IdAndDeletedAtIsNullOrderByDisplayOrderAscCreatedAtAsc(examId).size();
+    }
+    return toResponse(criteria.save(criterion));
+  }
+
+  @Transactional
+  public BeltExamCriterionResponse updateCriterion(UUID examId, UUID criterionId, BeltExamCriterionRequest request) {
+    BeltExam exam = requireExam(examId);
+    permissions.requireAttendanceManage(exam.organization.id);
+    if (exam.status == BeltExamStatus.COMPLETED || exam.status == BeltExamStatus.CANCELLED) {
+      throw new BusinessConflictException("Cannot change criteria of a " + exam.status.name().toLowerCase() + " exam");
+    }
+    BeltExamCriterion criterion = requireCriterion(criterionId);
+    if (!criterion.exam.id.equals(examId)) {
+      throw new ResourceNotFoundException("Criterion does not belong to this exam");
+    }
+    applyCriterion(criterion, request);
+    return toResponse(criterion);
+  }
+
+  @Transactional
+  public void removeCriterion(UUID examId, UUID criterionId) {
+    BeltExam exam = requireExam(examId);
+    permissions.requireAttendanceManage(exam.organization.id);
+    if (exam.status == BeltExamStatus.COMPLETED || exam.status == BeltExamStatus.CANCELLED) {
+      throw new BusinessConflictException("Cannot change criteria of a " + exam.status.name().toLowerCase() + " exam");
+    }
+    BeltExamCriterion criterion = requireCriterion(criterionId);
+    if (!criterion.exam.id.equals(examId)) {
+      throw new ResourceNotFoundException("Criterion does not belong to this exam");
+    }
+    criterion.softDelete();
+  }
+
+  @Transactional
+  public BeltExamCandidateResponse scoreCandidate(UUID examId, UUID candidateId, UUID criterionId, BeltExamScoreRequest request) {
+    BeltExam exam = requireExam(examId);
+    permissions.requireAttendanceManage(exam.organization.id);
+    if (exam.status == BeltExamStatus.CANCELLED) {
+      throw new BusinessConflictException("Cannot score candidates of a cancelled exam");
+    }
+    BeltExamCandidate candidate = requireCandidate(candidateId);
+    if (!candidate.exam.id.equals(examId)) {
+      throw new ResourceNotFoundException("Candidate does not belong to this exam");
+    }
+    BeltExamCriterion criterion = requireCriterion(criterionId);
+    if (!criterion.exam.id.equals(examId)) {
+      throw new ResourceNotFoundException("Criterion does not belong to this exam");
+    }
+    if (request.score().signum() < 0 || request.score().compareTo(criterion.maxScore) > 0) {
+      throw new BadRequestException("Score must be between 0 and " + criterion.maxScore.toPlainString());
+    }
+    BeltExamScore score = scores.findByCandidate_IdAndCriterion_IdAndDeletedAtIsNull(candidateId, criterionId)
+        .orElseGet(BeltExamScore::create);
+    score.candidate = candidate;
+    score.criterion = criterion;
+    score.score = request.score();
+    score.note = request.note();
+    scores.save(score);
+    return toResponse(candidate);
+  }
+
+  private void applyCriterion(BeltExamCriterion criterion, BeltExamCriterionRequest request) {
+    criterion.name = request.name();
+    criterion.description = request.description();
+    if (request.maxScore() != null) {
+      if (request.maxScore().signum() <= 0) {
+        throw new BadRequestException("maxScore must be greater than 0");
+      }
+      criterion.maxScore = request.maxScore();
+    }
+    if (request.weight() != null) {
+      if (request.weight().signum() <= 0) {
+        throw new BadRequestException("weight must be greater than 0");
+      }
+      criterion.weight = request.weight();
+    }
+    if (request.displayOrder() != null) criterion.displayOrder = request.displayOrder();
+  }
+
   private BeltExamResponse toResponse(BeltExam exam) {
+    List<BeltExamCriterion> criterionList = criteria.findByExam_IdAndDeletedAtIsNullOrderByDisplayOrderAscCreatedAtAsc(exam.id);
+    List<BeltExamCriterionResponse> criterionResponses = criterionList.stream().map(this::toResponse).toList();
     List<BeltExamCandidateResponse> candidateList = candidates
         .findByExam_IdAndDeletedAtIsNullOrderByCreatedAtAsc(exam.id)
         .stream()
-        .map(this::toResponse)
+        .map(c -> toResponse(c, criterionList))
         .toList();
     return new BeltExamResponse(
         exam.id,
@@ -180,17 +286,36 @@ public class BeltExamServiceImpl implements BeltExamService {
         exam.examDate,
         exam.location,
         exam.examinerName,
+        exam.passThreshold,
         exam.notes,
+        criterionResponses,
         candidateList
     );
   }
 
   private BeltExamCandidateResponse toResponse(BeltExamCandidate c) {
+    return toResponse(c, criteria.findByExam_IdAndDeletedAtIsNullOrderByDisplayOrderAscCreatedAtAsc(c.exam.id));
+  }
+
+  private BeltExamCandidateResponse toResponse(BeltExamCandidate c, List<BeltExamCriterion> criterionList) {
     Athlete athlete = c.athlete;
     OrganizationMember member = c.organizationMember;
     Person person = athlete != null ? athlete.person : member == null ? null : member.person;
     String displayName = athlete != null ? athlete.person.displayName
         : person == null ? null : person.displayName;
+
+    List<BeltExamScore> scoreRows = scores.findByCandidate_IdAndDeletedAtIsNull(c.id);
+    List<BeltExamScoreResponse> scoreResponses = scoreRows.stream().map(this::toResponse).toList();
+
+    BigDecimal totalScore = BigDecimal.ZERO;
+    for (BeltExamScore s : scoreRows) {
+      totalScore = totalScore.add(s.score.multiply(s.criterion.weight));
+    }
+    BigDecimal maxTotalScore = BigDecimal.ZERO;
+    for (BeltExamCriterion crit : criterionList) {
+      maxTotalScore = maxTotalScore.add(crit.maxScore.multiply(crit.weight));
+    }
+
     return new BeltExamCandidateResponse(
         c.id,
         c.exam.id,
@@ -202,7 +327,32 @@ public class BeltExamServiceImpl implements BeltExamService {
         c.targetBelt,
         c.result,
         c.examinerNote,
-        c.beltApplied
+        c.beltApplied,
+        totalScore,
+        maxTotalScore,
+        scoreResponses
+    );
+  }
+
+  private BeltExamCriterionResponse toResponse(BeltExamCriterion crit) {
+    return new BeltExamCriterionResponse(
+        crit.id,
+        crit.exam.id,
+        crit.name,
+        crit.description,
+        crit.maxScore,
+        crit.weight,
+        crit.displayOrder
+    );
+  }
+
+  private BeltExamScoreResponse toResponse(BeltExamScore s) {
+    return new BeltExamScoreResponse(
+        s.id,
+        s.candidate.id,
+        s.criterion.id,
+        s.score,
+        s.note
     );
   }
 
@@ -250,6 +400,11 @@ public class BeltExamServiceImpl implements BeltExamService {
   private BeltExamCandidate requireCandidate(UUID id) {
     return candidates.findByIdAndDeletedAtIsNull(id)
         .orElseThrow(() -> new ResourceNotFoundException("Belt exam candidate not found: " + id));
+  }
+
+  private BeltExamCriterion requireCriterion(UUID id) {
+    return criteria.findByIdAndDeletedAtIsNull(id)
+        .orElseThrow(() -> new ResourceNotFoundException("Belt exam criterion not found: " + id));
   }
 
   private Organization requireOrganization(UUID id) {

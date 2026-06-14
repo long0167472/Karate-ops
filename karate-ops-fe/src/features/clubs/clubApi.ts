@@ -4,6 +4,7 @@ import type {
   AttendanceRecordResponse,
   AttendanceSessionResponse,
   BeltExamCandidateResponse,
+  BeltExamCriterionResponse,
   BeltExamResponse,
   ClubFeeOverviewResponse,
   ClubMemberResponse,
@@ -13,7 +14,7 @@ import type {
   OrganizationDashboardOverviewResponse,
   OrganizationResponse
 } from "../../types";
-import { apiDelete, apiGet, apiPatch, apiPost } from "../../apiClient";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "../../apiClient";
 
 export interface ClubDirectoryData {
   clubs: OrganizationResponse[];
@@ -70,11 +71,11 @@ export async function fetchClubWorkspace(id: string): Promise<ClubWorkspaceData>
   };
 }
 
-export async function createBeltExam(orgId: string, body: { name: string; status?: string; examDate?: string; location?: string; examinerName?: string; notes?: string }) {
+export async function createBeltExam(orgId: string, body: { name: string; status?: string; examDate?: string; location?: string; examinerName?: string; passThreshold?: number; notes?: string }) {
   return apiPost<BeltExamResponse>(`/api/organizations/${orgId}/belt-exams`, body);
 }
 
-export async function updateBeltExam(examId: string, body: Partial<{ name: string; status: string; examDate: string; location: string; examinerName: string; notes: string }>) {
+export async function updateBeltExam(examId: string, body: Partial<{ name: string; status: string; examDate: string; location: string; examinerName: string; passThreshold: number; notes: string }>) {
   return apiPatch<BeltExamResponse>(`/api/belt-exams/${examId}`, body);
 }
 
@@ -96,6 +97,22 @@ export async function removeBeltExamCandidate(examId: string, candidateId: strin
 
 export async function applyBeltExamResults(examId: string) {
   return apiPost<BeltExamResponse>(`/api/belt-exams/${examId}/apply-results`, {});
+}
+
+export async function addBeltExamCriterion(examId: string, body: { name: string; description?: string; maxScore?: number; weight?: number; displayOrder?: number }) {
+  return apiPost<BeltExamCriterionResponse>(`/api/belt-exams/${examId}/criteria`, body);
+}
+
+export async function updateBeltExamCriterion(examId: string, criterionId: string, body: { name: string; description?: string; maxScore?: number; weight?: number; displayOrder?: number }) {
+  return apiPatch<BeltExamCriterionResponse>(`/api/belt-exams/${examId}/criteria/${criterionId}`, body);
+}
+
+export async function removeBeltExamCriterion(examId: string, criterionId: string) {
+  return apiDelete(`/api/belt-exams/${examId}/criteria/${criterionId}`);
+}
+
+export async function scoreBeltExamCandidate(examId: string, candidateId: string, criterionId: string, body: { score: number; note?: string }) {
+  return apiPut<BeltExamCandidateResponse>(`/api/belt-exams/${examId}/candidates/${candidateId}/scores/${criterionId}`, body);
 }
 
 export async function saveAttendanceRecord(sessionId: string, athleteId: string, record: AttendanceRecordResponse | undefined, status: string) {

@@ -15,6 +15,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Getter
@@ -46,6 +47,9 @@ public class BeltExam extends BaseEntity {
 
   @Column(name = "examiner_name", length = 180)
   public String examinerName;
+
+  @Column(name = "pass_threshold", precision = 6, scale = 2)
+  public BigDecimal passThreshold;
 
   @Column(length = 500)
   public String notes;

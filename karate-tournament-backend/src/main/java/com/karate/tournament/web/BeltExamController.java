@@ -4,8 +4,11 @@ import lombok.RequiredArgsConstructor;
 import com.karate.tournament.dto.request.BeltExamCandidateRequest;
 import com.karate.tournament.dto.request.BeltExamCandidateUpdateRequest;
 import com.karate.tournament.dto.request.BeltExamCreateRequest;
+import com.karate.tournament.dto.request.BeltExamCriterionRequest;
+import com.karate.tournament.dto.request.BeltExamScoreRequest;
 import com.karate.tournament.dto.request.BeltExamUpdateRequest;
 import com.karate.tournament.dto.response.BeltExamCandidateResponse;
+import com.karate.tournament.dto.response.BeltExamCriterionResponse;
 import com.karate.tournament.dto.response.BeltExamResponse;
 import com.karate.tournament.service.BeltExamService;
 import jakarta.validation.Valid;
@@ -17,6 +20,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -91,5 +95,42 @@ public class BeltExamController {
   @PostMapping("/belt-exams/{examId}/apply-results")
   public BeltExamResponse applyResults(@PathVariable UUID examId) {
     return beltExams.applyResults(examId);
+  }
+
+  @PostMapping("/belt-exams/{examId}/criteria")
+  @ResponseStatus(HttpStatus.CREATED)
+  public BeltExamCriterionResponse addCriterion(
+      @PathVariable UUID examId,
+      @Valid @RequestBody BeltExamCriterionRequest request
+  ) {
+    return beltExams.addCriterion(examId, request);
+  }
+
+  @PatchMapping("/belt-exams/{examId}/criteria/{criterionId}")
+  public BeltExamCriterionResponse updateCriterion(
+      @PathVariable UUID examId,
+      @PathVariable UUID criterionId,
+      @Valid @RequestBody BeltExamCriterionRequest request
+  ) {
+    return beltExams.updateCriterion(examId, criterionId, request);
+  }
+
+  @DeleteMapping("/belt-exams/{examId}/criteria/{criterionId}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void removeCriterion(
+      @PathVariable UUID examId,
+      @PathVariable UUID criterionId
+  ) {
+    beltExams.removeCriterion(examId, criterionId);
+  }
+
+  @PutMapping("/belt-exams/{examId}/candidates/{candidateId}/scores/{criterionId}")
+  public BeltExamCandidateResponse scoreCandidate(
+      @PathVariable UUID examId,
+      @PathVariable UUID candidateId,
+      @PathVariable UUID criterionId,
+      @Valid @RequestBody BeltExamScoreRequest request
+  ) {
+    return beltExams.scoreCandidate(examId, candidateId, criterionId, request);
   }
 }

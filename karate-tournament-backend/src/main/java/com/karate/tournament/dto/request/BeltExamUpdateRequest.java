@@ -1,6 +1,7 @@
 package com.karate.tournament.dto.request;
 
 import com.karate.tournament.entity.enums.BeltExamStatus;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public record BeltExamUpdateRequest(
@@ -9,6 +10,7 @@ public record BeltExamUpdateRequest(
     LocalDate examDate,
     String location,
     String examinerName,
+    BigDecimal passThreshold,
     String notes
 ) {
 }
