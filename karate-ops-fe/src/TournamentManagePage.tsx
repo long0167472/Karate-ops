@@ -1,32 +1,67 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
-  apiGet,
-  apiPost,
-  apiPatch,
-  apiDelete,
-  errorMessage,
-} from "./apiClient";
-import type {
-  TournamentExtended,
-  ParticipantApprovalItem,
-  AthleteApprovalItem,
-  AthleteApprovalSummary,
-  TournamentDraw,
-} from "./types";
+  Check,
+  CheckCircle2,
+  CircleDot,
+  ExternalLink,
+  Loader2,
+  Play,
+  RefreshCcw,
+  Save,
+  Settings2,
+  Shuffle,
+  Shield,
+  Swords,
+  Trophy,
+  Unlock,
+  Users,
+} from "lucide-react";
+import { apiDelete, apiGet, apiPatch, apiPost, errorMessage } from "./apiClient";
+import { AuthenticatedShell } from "./components/AuthenticatedShell";
+import { ConfirmModal } from "./components/ConfirmModal";
 import { StatusBadge } from "./components/StatusBadge";
 import { TournamentStepIndicator } from "./components/TournamentStepIndicator";
-import { ConfirmModal } from "./components/ConfirmModal";
 import "./tournament-styles.css";
-
-// ─── Props ─────────────────────────────────────────────────────────────────
+import type {
+  AthleteApprovalItem,
+  AthleteApprovalSummary,
+  AuthUserResponse,
+  ParticipantApprovalItem,
+  TournamentDraw,
+  TournamentExtended,
+} from "./types";
 
 interface TournamentManagePageProps {
   tournamentId: string;
+  user: AuthUserResponse;
+  actualUser: AuthUserResponse;
+  viewAsRole: string;
+  setViewAsRole: (role: string) => void;
+  onLogout: () => void;
 }
 
-// ─── Root page ─────────────────────────────────────────────────────────────
+interface SetupForm {
+  name: string;
+  description: string;
+  location: string;
+  startsOn: string;
+  endsOn: string;
+  registrationDeadline: string;
+  registrationFee: number;
+  phongTraoEnabled: boolean;
+  nangCaoEnabled: boolean;
+}
 
-export function TournamentManagePage({ tournamentId }: TournamentManagePageProps) {
+type AthleteView = "by-club" | "by-category";
+
+export function TournamentManagePage({
+  tournamentId,
+  user,
+  actualUser,
+  viewAsRole,
+  setViewAsRole,
+  onLogout,
+}: TournamentManagePageProps) {
   const [tournament, setTournament] = useState<TournamentExtended | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,98 +81,166 @@ export function TournamentManagePage({ tournamentId }: TournamentManagePageProps
 
   useEffect(() => {
     loadTournament();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournamentId]);
+
+  const stepMeta = [
+    { label: "Cấu hình", description: "Chốt dữ liệu nền và mở đăng ký đúng lúc." },
+    { label: "Duyệt CLB", description: "Xác nhận đơn vị tham gia trước khi chốt danh sách." },
+    { label: "Duyệt VĐV", description: "Lọc pending và khóa entry đúng quy trình." },
+    { label: "Bốc thăm", description: "Tạo nhánh đấu trước khi mở vận hành thực tế." },
+    { label: "Đang chạy", description: "Giải đã vào pha điều phối và giám sát live." },
+  ] as const;
 
   if (loading) {
     return (
-      <div className="page-spinner">
-        <SpinnerIcon />
-        <span>Đang tải thông tin giải...</span>
-      </div>
+      <AuthenticatedShell
+        user={user}
+        actualUser={actualUser}
+        viewAsRole={viewAsRole}
+        setViewAsRole={setViewAsRole}
+        onLogout={onLogout}
+        activeNav="tournaments"
+        eyebrow="Tournament operations"
+        title="Chi tiết giải đấu"
+        description="Đang tải dữ liệu quản trị giải đấu."
+        breadcrumbs={[{ label: "Ứng dụng", href: "/app" }, { label: "Giải đấu", href: "/tournaments" }, { label: "Chi tiết giải" }]}
+      >
+        <div className="page-spinner">
+          <Loader2 size={18} className="spin" />
+          <span>Đang tải thông tin giải...</span>
+        </div>
+      </AuthenticatedShell>
     );
   }
 
   if (error || !tournament) {
     return (
-      <div className="page-error">
-        <p>Không tải được thông tin giải.</p>
-        {error && <p style={{ fontSize: "0.8rem", color: "var(--muted-2)" }}>{error}</p>}
-        <button className="btn btn-ghost" onClick={loadTournament}>
-          Thử lại
-        </button>
-      </div>
+      <AuthenticatedShell
+        user={user}
+        actualUser={actualUser}
+        viewAsRole={viewAsRole}
+        setViewAsRole={setViewAsRole}
+        onLogout={onLogout}
+        activeNav="tournaments"
+        eyebrow="Tournament operations"
+        title="Chi tiết giải đấu"
+        description="Không tải được dữ liệu giải đấu cần quản trị."
+        breadcrumbs={[{ label: "Ứng dụng", href: "/app" }, { label: "Giải đấu", href: "/tournaments" }, { label: "Chi tiết giải" }]}
+      >
+        <div className="page-error">
+          <p>Không tải được thông tin giải.</p>
+          {error ? <p style={{ fontSize: "0.8rem", color: "var(--muted-2)" }}>{error}</p> : null}
+          <button className="btn btn-ghost" onClick={loadTournament}>
+            Thử lại
+          </button>
+        </div>
+      </AuthenticatedShell>
     );
   }
 
+  const currentStep = stepMeta[tournament.step] ?? stepMeta[0];
+  const activeLevels = Number(Boolean(tournament.phongTraoEnabled)) + Number(Boolean(tournament.nangCaoEnabled));
+
   return (
-    <div className="tournament-manage-page">
-      {/* Header */}
-      <div className="tournament-manage-header">
-        <h1 className="tournament-manage-title">
-          <TrophyIcon />
-          {tournament.name}
-          <StatusBadge status={tournament.status} />
-        </h1>
-        {tournament.location && (
-          <p className="tournament-manage-subtitle">
-            {tournament.location}
-            {tournament.startsOn && ` · ${formatDate(tournament.startsOn)}`}
-            {tournament.endsOn && ` – ${formatDate(tournament.endsOn)}`}
-          </p>
-        )}
-      </div>
+    <AuthenticatedShell
+      user={user}
+      actualUser={actualUser}
+      viewAsRole={viewAsRole}
+      setViewAsRole={setViewAsRole}
+      onLogout={onLogout}
+      activeNav="tournaments"
+      eyebrow="Tournament operations"
+      title={tournament.name}
+      description={currentStep.description}
+      breadcrumbs={[{ label: "Ứng dụng", href: "/app" }, { label: "Giải đấu", href: "/tournaments" }, { label: tournament.name }]}
+      headerActions={<a className="auth-page-primary-action" href={`/tournaments/${tournamentId}`}>Xem trang công khai</a>}
+    >
+      <section className="auth-metric-strip tournament-admin-metrics tournament-manage-metrics">
+        <div className="auth-metric-card compact">
+          <span>Trạng thái</span>
+          <strong>{tournament.status}</strong>
+        </div>
+        <div className="auth-metric-card compact">
+          <span>Bước hiện tại</span>
+          <strong>{tournament.step + 1}/5</strong>
+        </div>
+        <div className="auth-metric-card compact">
+          <span>Hạn đăng ký</span>
+          <strong>{tournament.registrationDeadline ? formatDate(tournament.registrationDeadline) : "Chưa đặt"}</strong>
+        </div>
+        <div className="auth-metric-card compact">
+          <span>Hạng thi đấu</span>
+          <strong>{activeLevels}</strong>
+        </div>
+      </section>
 
-      {/* Step indicator */}
-      <div className="manage-panel" style={{ padding: "20px 24px" }}>
-        <TournamentStepIndicator currentStep={tournament.step} />
-      </div>
+      <section className="auth-overview-columns sharp tournament-manage-overview">
+        <article className="auth-overview-panel primary">
+          <div className="auth-panel-head">
+            <div>
+              <span>Quy trình vận hành</span>
+              <h2>{currentStep.label}</h2>
+            </div>
+            <StatusBadge status={tournament.status} />
+          </div>
+          <div className="tournament-manage-header">
+            <h1 className="tournament-manage-title">
+              <Trophy size={18} />
+              {tournament.name}
+            </h1>
+            <p className="tournament-manage-subtitle">
+              {tournament.location || "Chưa cập nhật địa điểm"}
+              {tournament.startsOn ? ` · ${formatDate(tournament.startsOn)}` : ""}
+              {tournament.endsOn ? ` - ${formatDate(tournament.endsOn)}` : ""}
+            </p>
+          </div>
+          <div className="manage-panel manage-panel-step">
+            <TournamentStepIndicator currentStep={tournament.step} />
+          </div>
+        </article>
 
-      {/* Step panels */}
-      {tournament.step === 0 && (
-        <SetupPanel
-          tournament={tournament}
-          onSaved={loadTournament}
-          onOpened={loadTournament}
-        />
-      )}
-      {tournament.step === 1 && (
-        <ParticipantApprovalPanel
-          tournamentId={tournamentId}
-          onAdvanced={loadTournament}
-        />
-      )}
-      {tournament.step === 2 && (
-        <AthleteApprovalPanel
-          tournamentId={tournamentId}
-          onAdvanced={loadTournament}
-        />
-      )}
-      {tournament.step === 3 && (
-        <DrawPanel
-          tournamentId={tournamentId}
-          onStarted={loadTournament}
-        />
-      )}
-      {tournament.step === 4 && (
-        <RunningPanel tournamentId={tournamentId} />
-      )}
-    </div>
+        <article className="auth-overview-panel">
+          <div className="auth-panel-head">
+            <div>
+              <span>Đi nhanh</span>
+              <h2>Liên kết chính</h2>
+            </div>
+          </div>
+          <div className="auth-action-list">
+            <a className="auth-action-row" href="/tournaments">
+              <Trophy size={18} />
+              <div>
+                <strong>Quay về workspace giải</strong>
+                <span>Mở lại command-center và danh sách giải đang quản trị.</span>
+              </div>
+            </a>
+            <a className="auth-action-row" href={`/tournaments/${tournamentId}`}>
+              <ExternalLink size={18} />
+              <div>
+                <strong>Mở trang công khai</strong>
+                <span>Kiểm tra thông tin mà CLB và thành viên nhìn thấy.</span>
+              </div>
+            </a>
+            <a className="auth-action-row" href={`/standings/tournaments/${tournamentId}`}>
+              <Swords size={18} />
+              <div>
+                <strong>Xem bảng xếp hạng</strong>
+                <span>Đi thẳng tới standings nếu giải đã có dữ liệu thi đấu.</span>
+              </div>
+            </a>
+          </div>
+        </article>
+      </section>
+
+      <div className="tournament-manage-page shell-embedded">
+        {tournament.step === 0 ? <SetupPanel tournament={tournament} onSaved={loadTournament} onOpened={loadTournament} /> : null}
+        {tournament.step === 1 ? <ParticipantApprovalPanel tournamentId={tournamentId} onAdvanced={loadTournament} /> : null}
+        {tournament.step === 2 ? <AthleteApprovalPanel tournamentId={tournamentId} onAdvanced={loadTournament} /> : null}
+        {tournament.step === 3 ? <DrawPanel tournamentId={tournamentId} onStarted={loadTournament} /> : null}
+        {tournament.step === 4 ? <RunningPanel tournamentId={tournamentId} /> : null}
+      </div>
+    </AuthenticatedShell>
   );
-}
-
-// ─── Step 0: Setup ─────────────────────────────────────────────────────────
-
-interface SetupForm {
-  name: string;
-  description: string;
-  location: string;
-  startsOn: string;
-  endsOn: string;
-  registrationDeadline: string;
-  registrationFee: number;
-  phongTraoEnabled: boolean;
-  nangCaoEnabled: boolean;
 }
 
 function SetupPanel({
@@ -167,7 +270,7 @@ function SetupPanel({
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   function setField<K extends keyof SetupForm>(key: K, value: SetupForm[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((current) => ({ ...current, [key]: value }));
   }
 
   async function handleSave() {
@@ -203,146 +306,94 @@ function SetupPanel({
     <div className="manage-panel">
       <div className="manage-panel-header">
         <h2 className="manage-panel-title">
-          <GearIcon />
+          <Settings2 size={18} />
           Cấu hình giải đấu
         </h2>
-        {isOpen && (
+        {isOpen ? (
           <div className="status-banner status-banner--success">
-            <CheckCircleIcon />
+            <CheckCircle2 size={16} />
             Đang mở đăng ký
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="manage-panel-body">
-        {saveError && (
-          <div className="status-banner status-banner--warn">{saveError}</div>
-        )}
+        {saveError ? <div className="status-banner status-banner--warn">{saveError}</div> : null}
+        {openError ? <div className="status-banner status-banner--warn">{openError}</div> : null}
 
         <div className="form-grid">
           <div className="form-field form-field--full">
             <label>Tên giải</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setField("name", e.target.value)}
-              placeholder="VD: Giải vô địch Karate tỉnh 2026"
-            />
+            <input type="text" value={form.name} onChange={(event) => setField("name", event.target.value)} placeholder="VD: Hanoi Open 2026" />
           </div>
 
           <div className="form-field form-field--full">
             <label>Mô tả</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setField("description", e.target.value)}
-              placeholder="Mô tả ngắn về giải..."
-            />
+            <textarea value={form.description} onChange={(event) => setField("description", event.target.value)} placeholder="Tóm tắt mục tiêu và phạm vi giải đấu" />
           </div>
 
           <div className="form-field">
             <label>Địa điểm</label>
-            <input
-              type="text"
-              value={form.location}
-              onChange={(e) => setField("location", e.target.value)}
-              placeholder="Tên sân / tỉnh thành"
-            />
+            <input type="text" value={form.location} onChange={(event) => setField("location", event.target.value)} placeholder="Nhà thi đấu / tỉnh thành" />
           </div>
 
           <div className="form-field">
             <label>Phí đăng ký (VND)</label>
-            <input
-              type="number"
-              value={form.registrationFee}
-              min={0}
-              onChange={(e) => setField("registrationFee", Number(e.target.value))}
-            />
+            <input type="number" min="0" value={form.registrationFee} onChange={(event) => setField("registrationFee", Number(event.target.value))} />
           </div>
 
           <div className="form-field">
             <label>Ngày bắt đầu</label>
-            <input
-              type="date"
-              value={form.startsOn}
-              onChange={(e) => setField("startsOn", e.target.value)}
-            />
+            <input type="date" value={form.startsOn} onChange={(event) => setField("startsOn", event.target.value)} />
           </div>
 
           <div className="form-field">
             <label>Ngày kết thúc</label>
-            <input
-              type="date"
-              value={form.endsOn}
-              onChange={(e) => setField("endsOn", e.target.value)}
-            />
+            <input type="date" value={form.endsOn} onChange={(event) => setField("endsOn", event.target.value)} />
           </div>
 
           <div className="form-field">
             <label>Hạn đăng ký</label>
-            <input
-              type="date"
-              value={form.registrationDeadline}
-              onChange={(e) => setField("registrationDeadline", e.target.value)}
-            />
+            <input type="date" value={form.registrationDeadline} onChange={(event) => setField("registrationDeadline", event.target.value)} />
           </div>
         </div>
 
         <hr className="section-divider" />
 
-        {/* Toggles */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            Hạng thi đấu
-          </p>
+        <div className="toggle-group">
+          <p>Hạng thi đấu</p>
           <label className="toggle-row">
-            <div
-              className={`toggle-track${form.phongTraoEnabled ? " toggle-track--on" : ""}`}
-              onClick={() => setField("phongTraoEnabled", !form.phongTraoEnabled)}
-            >
+            <div className={`toggle-track${form.phongTraoEnabled ? " toggle-track--on" : ""}`} onClick={() => setField("phongTraoEnabled", !form.phongTraoEnabled)}>
               <div className="toggle-thumb" />
             </div>
             <span className="toggle-label-text">Hạng phong trào</span>
           </label>
           <label className="toggle-row">
-            <div
-              className={`toggle-track${form.nangCaoEnabled ? " toggle-track--on" : ""}`}
-              onClick={() => setField("nangCaoEnabled", !form.nangCaoEnabled)}
-            >
+            <div className={`toggle-track${form.nangCaoEnabled ? " toggle-track--on" : ""}`} onClick={() => setField("nangCaoEnabled", !form.nangCaoEnabled)}>
               <div className="toggle-thumb" />
             </div>
             <span className="toggle-label-text">Hạng nâng cao</span>
           </label>
         </div>
 
-        <hr className="section-divider" />
-
         <div className="action-row">
           <button className="btn btn-ghost" onClick={handleSave} disabled={saving}>
-            {saving ? <SpinnerIcon /> : <SaveIcon />}
+            {saving ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
             {saving ? "Đang lưu..." : "Lưu thông tin"}
           </button>
-
-          {!isOpen && (
-            <button
-              className="btn btn-primary"
-              onClick={() => setConfirmOpen(true)}
-              disabled={opening}
-            >
-              {opening ? <SpinnerIcon /> : <UnlockIcon />}
+          {!isOpen ? (
+            <button className="btn btn-primary" onClick={() => setConfirmOpen(true)} disabled={opening}>
+              {opening ? <Loader2 size={16} className="spin" /> : <Unlock size={16} />}
               {opening ? "Đang xử lý..." : "Mở đăng ký"}
             </button>
-          )}
+          ) : null}
         </div>
-
-        {openError && (
-          <div className="status-banner status-banner--warn">{openError}</div>
-        )}
       </div>
 
       <ConfirmModal
         open={confirmOpen}
         title="Mở đăng ký?"
-        message="Sau khi mở đăng ký, các CLB có thể đăng ký tham dự. Bạn vẫn có thể chỉnh sửa thông tin giải sau."
+        message="Sau khi mở đăng ký, các CLB có thể gửi danh sách tham dự. Bạn vẫn có thể cập nhật thông tin mô tả sau đó."
         confirmLabel="Mở đăng ký"
         onConfirm={handleOpenRegistration}
         onCancel={() => setConfirmOpen(false)}
@@ -351,23 +402,11 @@ function SetupPanel({
   );
 }
 
-// ─── Step 1: Participant (Club) Approval ───────────────────────────────────
-
-function ParticipantApprovalPanel({
-  tournamentId,
-  onAdvanced,
-}: {
-  tournamentId: string;
-  onAdvanced: () => void;
-}) {
+function ParticipantApprovalPanel({ tournamentId, onAdvanced }: { tournamentId: string; onAdvanced: () => void }) {
   const [clubs, setClubs] = useState<ParticipantApprovalItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<{
-    participantId: string;
-    action: "approve" | "inactive";
-    name: string;
-  } | null>(null);
+  const [confirm, setConfirm] = useState<{ participantId: string; action: "approve" | "inactive"; name: string } | null>(null);
   const [actioning, setActioning] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
@@ -377,10 +416,7 @@ function ParticipantApprovalPanel({
     try {
       setLoading(true);
       setError(null);
-      const data = await apiGet<ParticipantApprovalItem[]>(
-        `/api/tournaments/${tournamentId}/approval/clubs`
-      );
-      setClubs(data);
+      setClubs(await apiGet<ParticipantApprovalItem[]>(`/api/tournaments/${tournamentId}/approval/clubs`));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -390,17 +426,15 @@ function ParticipantApprovalPanel({
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournamentId]);
 
   async function handleAction() {
     if (!confirm) return;
     try {
       setActioning(true);
-      await apiPatch(
-        `/api/tournaments/${tournamentId}/approval/clubs/${confirm.participantId}`,
-        { action: confirm.action === "approve" ? "APPROVE" : "INACTIVE" }
-      );
+      await apiPatch(`/api/tournaments/${tournamentId}/approval/clubs/${confirm.participantId}`, {
+        action: confirm.action === "approve" ? "APPROVE" : "INACTIVE",
+      });
       await load();
     } catch (e) {
       setError(errorMessage(e));
@@ -428,86 +462,57 @@ function ParticipantApprovalPanel({
     <div className="manage-panel">
       <div className="manage-panel-header">
         <h2 className="manage-panel-title">
-          <ClubIcon />
+          <Shield size={18} />
           Duyệt câu lạc bộ
         </h2>
-        <button
-          className="btn btn-primary"
-          onClick={() => setConfirmAdvance(true)}
-          disabled={advancing}
-        >
-          {advancing ? <SpinnerIcon /> : null}
-          Tiếp theo: Duyệt VDV
+        <button className="btn btn-primary" onClick={() => setConfirmAdvance(true)} disabled={advancing}>
+          {advancing ? <Loader2 size={16} className="spin" /> : null}
+          Tiếp theo: Duyệt VĐV
         </button>
       </div>
 
       <div className="manage-panel-body">
-        {error && <div className="status-banner status-banner--warn">{error}</div>}
-        {advanceError && <div className="status-banner status-banner--warn">{advanceError}</div>}
+        {error ? <div className="status-banner status-banner--warn">{error}</div> : null}
+        {advanceError ? <div className="status-banner status-banner--warn">{advanceError}</div> : null}
 
         {loading ? (
-          <div className="page-spinner"><SpinnerIcon /> Đang tải...</div>
+          <div className="page-spinner"><Loader2 size={18} className="spin" /> Đang tải...</div>
         ) : clubs.length === 0 ? (
-          <div className="empty-state">
-            <ClubIcon />
-            <p>Chưa có câu lạc bộ nào đăng ký.</p>
-          </div>
+          <EmptyState icon={<Shield size={18} />} text="Chưa có câu lạc bộ nào đăng ký." />
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div className="manage-table-wrap">
             <table className="manage-table">
               <thead>
                 <tr>
                   <th>CLB</th>
                   <th>Trạng thái</th>
                   <th>VDV</th>
-                  <th></th>
+                  <th>Hành động</th>
                 </tr>
               </thead>
               <tbody>
                 {clubs.map((club) => (
                   <tr key={club.participantId}>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{club.organizationName}</div>
-                      {club.displayName && club.displayName !== club.organizationName && (
-                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{club.displayName}</div>
-                      )}
+                      <div className="manage-primary-cell">
+                        <strong>{club.organizationName}</strong>
+                        {club.displayName && club.displayName !== club.organizationName ? <span>{club.displayName}</span> : null}
+                      </div>
                     </td>
+                    <td><StatusBadge status={club.status} size="sm" /></td>
+                    <td>{club.approvedEntries}/{club.totalEntries}</td>
                     <td>
-                      <StatusBadge status={club.status} size="sm" />
-                    </td>
-                    <td style={{ color: "var(--muted)" }}>
-                      {club.approvedEntries}/{club.totalEntries}
-                    </td>
-                    <td>
-                      <div className="action-row">
-                        {club.status !== "APPROVED" && (
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() =>
-                              setConfirm({
-                                participantId: club.participantId,
-                                action: "approve",
-                                name: club.organizationName,
-                              })
-                            }
-                          >
+                      <div className="action-row compact">
+                        {club.status !== "APPROVED" ? (
+                          <button className="btn btn-outline btn-sm" onClick={() => setConfirm({ participantId: club.participantId, action: "approve", name: club.organizationName })}>
                             Duyệt
                           </button>
-                        )}
-                        {club.status !== "INACTIVE" && (
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() =>
-                              setConfirm({
-                                participantId: club.participantId,
-                                action: "inactive",
-                                name: club.organizationName,
-                              })
-                            }
-                          >
+                        ) : null}
+                        {club.status !== "INACTIVE" ? (
+                          <button className="btn btn-danger btn-sm" onClick={() => setConfirm({ participantId: club.participantId, action: "inactive", name: club.organizationName })}>
                             Không tham dự
                           </button>
-                        )}
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -518,30 +523,20 @@ function ParticipantApprovalPanel({
         )}
       </div>
 
-      {/* Action confirm */}
       <ConfirmModal
         open={confirm !== null}
-        title={
-          confirm?.action === "approve"
-            ? `Duyệt CLB ${confirm?.name}?`
-            : `Đánh dấu không tham dự?`
-        }
-        message={
-          confirm?.action === "approve"
-            ? `CLB ${confirm?.name} sẽ được duyệt tham dự giải.`
-            : `CLB ${confirm?.name} sẽ bị đánh dấu không tham dự giải này.`
-        }
+        title={confirm?.action === "approve" ? `Duyệt CLB ${confirm?.name}?` : "Đánh dấu không tham dự?"}
+        message={confirm?.action === "approve" ? `CLB ${confirm?.name} sẽ được duyệt vào giải.` : `CLB ${confirm?.name} sẽ bị chuyển sang trạng thái không tham dự.`}
         confirmLabel={confirm?.action === "approve" ? "Duyệt" : "Xác nhận"}
         dangerous={confirm?.action === "inactive"}
         onConfirm={handleAction}
         onCancel={() => setConfirm(null)}
       />
 
-      {/* Advance confirm */}
       <ConfirmModal
         open={confirmAdvance}
-        title="Chuyển sang bước Duyệt VDV?"
-        message="Sau bước này, bạn sẽ không thể thêm CLB mới. Đảm bảo đã duyệt đủ các CLB cần thiết."
+        title="Chuyển sang bước duyệt VĐV?"
+        message="Sau bước này, bạn nên xem như danh sách CLB đã chốt để tiếp tục xử lý entry của vận động viên."
         confirmLabel="Tiếp tục"
         onConfirm={handleAdvance}
         onCancel={() => setConfirmAdvance(false)}
@@ -550,17 +545,7 @@ function ParticipantApprovalPanel({
   );
 }
 
-// ─── Step 2: Athlete Approval ──────────────────────────────────────────────
-
-type AthleteView = "by-club" | "by-category";
-
-function AthleteApprovalPanel({
-  tournamentId,
-  onAdvanced,
-}: {
-  tournamentId: string;
-  onAdvanced: () => void;
-}) {
+function AthleteApprovalPanel({ tournamentId, onAdvanced }: { tournamentId: string; onAdvanced: () => void }) {
   const [athletes, setAthletes] = useState<AthleteApprovalItem[]>([]);
   const [summary, setSummary] = useState<AthleteApprovalSummary | null>(null);
   const [view, setView] = useState<AthleteView>("by-club");
@@ -576,12 +561,12 @@ function AthleteApprovalPanel({
     try {
       setLoading(true);
       setError(null);
-      const [list, sum] = await Promise.all([
+      const [list, nextSummary] = await Promise.all([
         apiGet<AthleteApprovalItem[]>(`/api/tournaments/${tournamentId}/approval/athletes`),
         apiGet<AthleteApprovalSummary>(`/api/tournaments/${tournamentId}/approval/athletes/summary`),
       ]);
       setAthletes(list);
-      setSummary(sum);
+      setSummary(nextSummary);
       setSelected(new Set());
     } catch (e) {
       setError(errorMessage(e));
@@ -592,12 +577,15 @@ function AthleteApprovalPanel({
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournamentId]);
 
+  const pendingAthletes = athletes.filter((athlete) => athlete.btcApprovalStatus === "PENDING");
+  const allPendingSelected = pendingAthletes.length > 0 && selected.size === pendingAthletes.length;
+  const grouped = useMemo(() => groupAthletes(athletes, view), [athletes, view]);
+
   function toggleSelect(entryId: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
+    setSelected((current) => {
+      const next = new Set(current);
       if (next.has(entryId)) next.delete(entryId);
       else next.add(entryId);
       return next;
@@ -605,21 +593,18 @@ function AthleteApprovalPanel({
   }
 
   function toggleAll() {
-    const pending = athletes.filter((a) => a.btcApprovalStatus === "PENDING");
-    if (selected.size === pending.length && pending.length > 0) {
+    if (allPendingSelected) {
       setSelected(new Set());
-    } else {
-      setSelected(new Set(pending.map((a) => a.entryId)));
+      return;
     }
+    setSelected(new Set(pendingAthletes.map((athlete) => athlete.entryId)));
   }
 
   async function handleBulkApprove() {
-    if (selected.size === 0) return;
+    if (!selected.size) return;
     try {
       setBulkApproving(true);
-      await apiPost(`/api/tournaments/${tournamentId}/approval/athletes/bulk`, {
-        entryIds: Array.from(selected),
-      });
+      await apiPost(`/api/tournaments/${tournamentId}/approval/athletes/bulk`, { entryIds: Array.from(selected) });
       await load();
     } catch (e) {
       setError(errorMessage(e));
@@ -642,113 +627,78 @@ function AthleteApprovalPanel({
     }
   }
 
-  // Group athletes for display
-  const grouped = groupAthletes(athletes, view);
-  const pendingAthletes = athletes.filter((a) => a.btcApprovalStatus === "PENDING");
-  const allPendingSelected =
-    pendingAthletes.length > 0 && selected.size === pendingAthletes.length;
-
   return (
     <div className="manage-panel">
       <div className="manage-panel-header">
         <h2 className="manage-panel-title">
-          <AthleteIcon />
+          <Users size={18} />
           Duyệt vận động viên
         </h2>
-        <button
-          className="btn btn-primary"
-          onClick={() => setConfirmAdvance(true)}
-          disabled={advancing}
-        >
-          {advancing ? <SpinnerIcon /> : null}
-          Tạo Sigma
+        <button className="btn btn-primary" onClick={() => setConfirmAdvance(true)} disabled={advancing}>
+          {advancing ? <Loader2 size={16} className="spin" /> : null}
+          Tiếp theo: Bốc thăm
         </button>
       </div>
 
       <div className="manage-panel-body">
-        {/* Summary */}
-        {summary && (
+        {summary ? (
           <div className="summary-counters">
             <div className="summary-counter">
               <span className="summary-counter__value">{summary.totalEntries}</span>
               <span className="summary-counter__label">Tổng đăng ký</span>
             </div>
             <div className="summary-counter">
-              <span className="summary-counter__value" style={{ color: "var(--ao)" }}>
-                {summary.approved}
-              </span>
+              <span className="summary-counter__value">{summary.approved}</span>
               <span className="summary-counter__label">Đã duyệt</span>
             </div>
             <div className="summary-counter">
-              <span className="summary-counter__value" style={{ color: "#f59e0b" }}>
-                {summary.pending}
-              </span>
+              <span className="summary-counter__value">{summary.pending}</span>
               <span className="summary-counter__label">Chờ duyệt</span>
             </div>
             <div className="summary-counter">
-              <span className="summary-counter__value" style={{ color: "var(--aka)" }}>
-                {summary.rejected}
-              </span>
+              <span className="summary-counter__value">{summary.rejected}</span>
               <span className="summary-counter__label">Từ chối</span>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {error && <div className="status-banner status-banner--warn">{error}</div>}
-        {advanceError && <div className="status-banner status-banner--warn">{advanceError}</div>}
+        {error ? <div className="status-banner status-banner--warn">{error}</div> : null}
+        {advanceError ? <div className="status-banner status-banner--warn">{advanceError}</div> : null}
 
-        {/* Toolbar */}
-        <div className="action-row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div className="action-row spread">
           <div className="view-switcher">
-            <button
-              className={`view-switcher__btn${view === "by-club" ? " view-switcher__btn--active" : ""}`}
-              onClick={() => setView("by-club")}
-            >
+            <button className={`view-switcher__btn${view === "by-club" ? " view-switcher__btn--active" : ""}`} onClick={() => setView("by-club")}>
               Theo CLB
             </button>
-            <button
-              className={`view-switcher__btn${view === "by-category" ? " view-switcher__btn--active" : ""}`}
-              onClick={() => setView("by-category")}
-            >
+            <button className={`view-switcher__btn${view === "by-category" ? " view-switcher__btn--active" : ""}`} onClick={() => setView("by-category")}>
               Theo hạng cân
             </button>
           </div>
 
-          {selected.size > 0 && (
-            <button
-              className="btn btn-outline"
-              onClick={handleBulkApprove}
-              disabled={bulkApproving}
-            >
-              {bulkApproving ? <SpinnerIcon /> : <CheckIcon />}
-              Duyệt {selected.size} VDV
+          {selected.size ? (
+            <button className="btn btn-outline" onClick={handleBulkApprove} disabled={bulkApproving}>
+              {bulkApproving ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
+              Duyệt {selected.size} VĐV
             </button>
-          )}
+          ) : null}
         </div>
 
         {loading ? (
-          <div className="page-spinner"><SpinnerIcon /> Đang tải...</div>
+          <div className="page-spinner"><Loader2 size={18} className="spin" /> Đang tải...</div>
         ) : athletes.length === 0 ? (
-          <div className="empty-state">
-            <AthleteIcon />
-            <p>Chưa có vận động viên nào đăng ký.</p>
-          </div>
+          <EmptyState icon={<Users size={18} />} text="Chưa có vận động viên nào được gửi vào giải." />
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div className="manage-table-wrap">
             <table className="manage-table">
               <thead>
                 <tr>
-                  <th style={{ width: 32 }}>
-                    <input
-                      type="checkbox"
-                      checked={allPendingSelected}
-                      onChange={toggleAll}
-                    />
+                  <th style={{ width: 36 }}>
+                    <input type="checkbox" checked={allPendingSelected} onChange={toggleAll} />
                   </th>
                   <th>{view === "by-club" ? "CLB" : "Hạng cân"}</th>
                   <th>Vận động viên</th>
                   <th>{view === "by-club" ? "Hạng cân" : "CLB"}</th>
-                  <th>Cân nặng (kg)</th>
+                  <th>Cân nặng</th>
                   <th>Trạng thái</th>
                 </tr>
               </thead>
@@ -756,27 +706,15 @@ function AthleteApprovalPanel({
                 {grouped.map((row) => (
                   <tr key={row.entryId}>
                     <td>
-                      {row.btcApprovalStatus === "PENDING" && (
-                        <input
-                          type="checkbox"
-                          checked={selected.has(row.entryId)}
-                          onChange={() => toggleSelect(row.entryId)}
-                        />
-                      )}
+                      {row.btcApprovalStatus === "PENDING" ? (
+                        <input type="checkbox" checked={selected.has(row.entryId)} onChange={() => toggleSelect(row.entryId)} />
+                      ) : null}
                     </td>
-                    <td style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
-                      {view === "by-club" ? row.organizationName : row.categoryName}
-                    </td>
-                    <td style={{ fontWeight: 600 }}>{row.athleteName}</td>
-                    <td style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
-                      {view === "by-club" ? row.categoryName : row.organizationName}
-                    </td>
-                    <td style={{ color: "var(--muted)" }}>
-                      {row.registrationWeightKg ?? "—"}
-                    </td>
-                    <td>
-                      <StatusBadge status={row.btcApprovalStatus} size="sm" />
-                    </td>
+                    <td>{view === "by-club" ? row.organizationName : row.categoryName}</td>
+                    <td><strong>{row.athleteName}</strong></td>
+                    <td>{view === "by-club" ? row.categoryName : row.organizationName}</td>
+                    <td>{row.registrationWeightKg ?? "-"}</td>
+                    <td><StatusBadge status={row.btcApprovalStatus} size="sm" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -787,9 +725,9 @@ function AthleteApprovalPanel({
 
       <ConfirmModal
         open={confirmAdvance}
-        title="Tạo Sigma (bốc thăm)?"
-        message="Sau bước này, danh sách VDV sẽ được chốt và hệ thống sẽ tạo nhánh đấu. Không thể thêm VDV sau khi bắt đầu sigma."
-        confirmLabel="Tạo Sigma"
+        title="Chuyển sang bước bốc thăm?"
+        message="Sau bước này, danh sách vận động viên nên được xem như đã chốt để tạo nhánh đấu."
+        confirmLabel="Tiếp tục"
         onConfirm={handleAdvance}
         onCancel={() => setConfirmAdvance(false)}
       />
@@ -797,28 +735,7 @@ function AthleteApprovalPanel({
   );
 }
 
-function groupAthletes(athletes: AthleteApprovalItem[], view: AthleteView): AthleteApprovalItem[] {
-  if (view === "by-club") {
-    return [...athletes].sort((a, b) =>
-      a.organizationName.localeCompare(b.organizationName) ||
-      a.athleteName.localeCompare(b.athleteName)
-    );
-  }
-  return [...athletes].sort((a, b) =>
-    a.categoryName.localeCompare(b.categoryName) ||
-    a.athleteName.localeCompare(b.athleteName)
-  );
-}
-
-// ─── Step 3: Draw / Sigma ──────────────────────────────────────────────────
-
-function DrawPanel({
-  tournamentId,
-  onStarted,
-}: {
-  tournamentId: string;
-  onStarted: () => void;
-}) {
+function DrawPanel({ tournamentId, onStarted }: { tournamentId: string; onStarted: () => void }) {
   const [draw, setDraw] = useState<TournamentDraw | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -832,8 +749,7 @@ function DrawPanel({
     try {
       setLoading(true);
       setError(null);
-      const data = await apiGet<TournamentDraw>(`/api/tournaments/${tournamentId}/draw`);
-      setDraw(data);
+      setDraw(await apiGet<TournamentDraw>(`/api/tournaments/${tournamentId}/draw`));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -843,7 +759,6 @@ function DrawPanel({
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournamentId]);
 
   async function handleDraw() {
@@ -887,77 +802,50 @@ function DrawPanel({
     }
   }
 
-  const allDrawn = draw?.categories.every((c) => c.hasActiveDraw) ?? false;
+  const allDrawn = draw?.categories.every((category) => category.hasActiveDraw) ?? false;
 
   return (
     <div className="manage-panel">
       <div className="manage-panel-header">
         <h2 className="manage-panel-title">
-          <DrawIcon />
-          Bốc thăm (Sigma)
+          <Shuffle size={18} />
+          Bốc thăm và tạo nhánh
         </h2>
-        <div className="action-row">
-          <button
-            className="btn btn-ghost"
-            onClick={() => setConfirmReset(true)}
-            disabled={resetting || drawing}
-          >
-            {resetting ? <SpinnerIcon /> : <ResetIcon />}
+        <div className="action-row compact">
+          <button className="btn btn-ghost" onClick={() => setConfirmReset(true)} disabled={resetting || drawing}>
+            {resetting ? <Loader2 size={16} className="spin" /> : <RefreshCcw size={16} />}
             Reset
           </button>
-          <button
-            className="btn btn-outline"
-            onClick={handleDraw}
-            disabled={drawing || resetting}
-          >
-            {drawing ? <SpinnerIcon /> : <DiceIcon />}
+          <button className="btn btn-outline" onClick={handleDraw} disabled={drawing || resetting}>
+            {drawing ? <Loader2 size={16} className="spin" /> : <Shuffle size={16} />}
             Tạo ngẫu nhiên
           </button>
-          <button
-            className="btn btn-primary"
-            onClick={() => setConfirmStart(true)}
-            disabled={starting || !allDrawn}
-            title={!allDrawn ? "Cần tạo nhánh đấu cho tất cả hạng cân trước" : undefined}
-          >
-            {starting ? <SpinnerIcon /> : <PlayIcon />}
+          <button className="btn btn-primary" onClick={() => setConfirmStart(true)} disabled={starting || !allDrawn}>
+            {starting ? <Loader2 size={16} className="spin" /> : <Play size={16} />}
             Bắt đầu giải
           </button>
         </div>
       </div>
 
       <div className="manage-panel-body">
-        {error && <div className="status-banner status-banner--warn">{error}</div>}
-
-        {!allDrawn && draw && draw.categories.length > 0 && (
-          <div className="status-banner status-banner--info">
-            Cần hoàn thành bốc thăm tất cả hạng cân trước khi bắt đầu giải.
-          </div>
-        )}
+        {error ? <div className="status-banner status-banner--warn">{error}</div> : null}
+        {!allDrawn && draw && draw.categories.length ? <div className="status-banner status-banner--info">Cần hoàn thành bốc thăm cho tất cả hạng cân trước khi bắt đầu giải.</div> : null}
 
         {loading ? (
-          <div className="page-spinner"><SpinnerIcon /> Đang tải...</div>
-        ) : !draw || draw.categories.length === 0 ? (
-          <div className="empty-state">
-            <DrawIcon />
-            <p>Chưa có hạng cân nào. Kiểm tra lại cấu hình giải.</p>
-          </div>
+          <div className="page-spinner"><Loader2 size={18} className="spin" /> Đang tải...</div>
+        ) : !draw || !draw.categories.length ? (
+          <EmptyState icon={<CircleDot size={18} />} text="Chưa có hạng cân nào để tạo nhánh đấu." />
         ) : (
           <div className="draw-grid">
-            {draw.categories.map((cat) => (
-              <div
-                key={cat.categoryId}
-                className={`draw-card${cat.hasActiveDraw ? " draw-card--has-draw" : ""}`}
-              >
-                <div className="draw-card__name">{cat.categoryName}</div>
+            {draw.categories.map((category) => (
+              <div key={category.categoryId} className={`draw-card${category.hasActiveDraw ? " draw-card--has-draw" : ""}`}>
+                <div className="draw-card__name">{category.categoryName}</div>
                 <div className="draw-card__meta">
-                  <span>{cat.athleteCount} VDV</span>
-                  <span>Bảng {cat.bracketSize}</span>
+                  <span>{category.athleteCount} VĐV</span>
+                  <span>Bảng {category.bracketSize}</span>
                 </div>
-                <div
-                  className="draw-card__status"
-                  style={{ color: cat.hasActiveDraw ? "var(--green)" : "var(--muted)" }}
-                >
-                  {cat.hasActiveDraw ? "Đã bốc thăm" : "Chưa bốc thăm"}
+                <div className="draw-card__status">
+                  {category.hasActiveDraw ? "Đã bốc thăm" : "Chưa bốc thăm"}
                 </div>
               </div>
             ))}
@@ -968,7 +856,7 @@ function DrawPanel({
       <ConfirmModal
         open={confirmReset}
         title="Reset bốc thăm?"
-        message="Toàn bộ kết quả bốc thăm sẽ bị xoá. Bạn có thể bốc thăm lại sau."
+        message="Toàn bộ nhánh đấu sẽ bị xóa để tạo lại từ đầu."
         confirmLabel="Reset"
         dangerous
         onConfirm={handleReset}
@@ -978,7 +866,7 @@ function DrawPanel({
       <ConfirmModal
         open={confirmStart}
         title="Bắt đầu giải đấu?"
-        message="Sau khi bắt đầu, sơ đồ đấu sẽ được chốt và không thể thay đổi. Trọng tài có thể vào điều khiển trận đấu."
+        message="Sau khi bắt đầu, hệ thống sẽ xem nhánh đấu là dữ liệu vận hành chính cho tatami và dashboard."
         confirmLabel="Bắt đầu"
         onConfirm={handleStart}
         onCancel={() => setConfirmStart(false)}
@@ -987,34 +875,36 @@ function DrawPanel({
   );
 }
 
-// ─── Step 4: Running ───────────────────────────────────────────────────────
-
 function RunningPanel({ tournamentId }: { tournamentId: string }) {
   return (
     <div className="manage-panel">
       <div className="manage-panel-header">
         <h2 className="manage-panel-title">
-          <PlayIcon />
+          <Play size={18} />
           Giải đang diễn ra
         </h2>
       </div>
+
       <div className="manage-panel-body">
         <div className="status-banner status-banner--success">
-          <CheckCircleIcon />
-          Giải đấu đã bắt đầu. Trọng tài và tatami đang hoạt động.
+          <CheckCircle2 size={16} />
+          Giải đấu đã bắt đầu. Lúc này nên điều phối qua dashboard, tatami control và các màn hình live.
         </div>
-        <div className="action-row">
-          <a
-            className="btn btn-primary"
-            href={`/tournament/${tournamentId}/dashboard`}
-          >
-            Xem Dashboard giải
+
+        <div className="auth-action-list">
+          <a className="auth-action-row" href={`/dashboard/tournaments/${tournamentId}`}>
+            <Trophy size={18} />
+            <div>
+              <strong>Mở dashboard giải</strong>
+              <span>Theo dõi tiến độ và luồng điều phối tổng thể.</span>
+            </div>
           </a>
-          <a
-            className="btn btn-ghost"
-            href={`/tournament/${tournamentId}/tatami`}
-          >
-            Quản lý Tatami
+          <a className="auth-action-row" href="/tournaments">
+            <Swords size={18} />
+            <div>
+              <strong>Quay về command-center</strong>
+              <span>Tiếp tục quản lý tatami, entries hoặc các giải khác.</span>
+            </div>
           </a>
         </div>
       </div>
@@ -1022,145 +912,27 @@ function RunningPanel({ tournamentId }: { tournamentId: string }) {
   );
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+function EmptyState({ icon, text }: { icon: ReactNode; text: string }) {
+  return (
+    <div className="empty-state">
+      {icon}
+      <p>{text}</p>
+    </div>
+  );
+}
 
-function formatDate(iso: string): string {
+function groupAthletes(athletes: AthleteApprovalItem[], view: AthleteView) {
+  if (view === "by-club") {
+    return [...athletes].sort((a, b) => a.organizationName.localeCompare(b.organizationName) || a.athleteName.localeCompare(b.athleteName));
+  }
+
+  return [...athletes].sort((a, b) => a.categoryName.localeCompare(b.categoryName) || a.athleteName.localeCompare(b.athleteName));
+}
+
+function formatDate(iso: string) {
   try {
-    return new Intl.DateTimeFormat("vi-VN", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(new Date(iso));
+    return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso));
   } catch {
     return iso;
   }
-}
-
-// ─── Inline icon components ────────────────────────────────────────────────
-
-function SpinnerIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ animation: "spin 0.8s linear infinite" }}
-    >
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="50 14" />
-    </svg>
-  );
-}
-
-function TrophyIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M8 21h8M12 17v4M7 4H5a2 2 0 0 0-2 2v2a4 4 0 0 0 4 4h.1M17 4h2a2 2 0 0 1 2 2v2a4 4 0 0 1-4 4h-.1M7 4h10v6a5 5 0 0 1-10 0V4Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" strokeWidth="1.7"/>
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" stroke="currentColor" strokeWidth="1.7"/>
-    </svg>
-  );
-}
-
-function ClubIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/>
-      <path d="M9 22V12h6v10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function AthleteIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="7" r="4" stroke="currentColor" strokeWidth="1.7"/>
-      <path d="M4 21v-1a8 8 0 0 1 16 0v1" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function DrawIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="3" y="3" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.7"/>
-      <rect x="15" y="3" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.7"/>
-      <rect x="15" y="15" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.7"/>
-      <path d="M9 6h3v12h3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M12 12h3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function SaveIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/>
-      <path d="M17 21v-8H7v8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M7 3v5h8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function UnlockIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" strokeWidth="1.7"/>
-      <path d="M7 11V7a5 5 0 0 1 9.9-1" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function CheckCircleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7"/>
-      <path d="M8.5 12.5l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function ResetIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M3 3v5h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function DiceIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.7"/>
-      <circle cx="8" cy="8" r="1.2" fill="currentColor"/>
-      <circle cx="16" cy="8" r="1.2" fill="currentColor"/>
-      <circle cx="8" cy="16" r="1.2" fill="currentColor"/>
-      <circle cx="16" cy="16" r="1.2" fill="currentColor"/>
-      <circle cx="12" cy="12" r="1.2" fill="currentColor"/>
-    </svg>
-  );
-}
-
-function PlayIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="5,3 19,12 5,21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" fill="currentColor" fillOpacity="0.15"/>
-    </svg>
-  );
 }
