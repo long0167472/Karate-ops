@@ -37,6 +37,7 @@ import {
   statusLabel,
   today
 } from "./features/clubs/clubUtils";
+import { AuthenticatedShell } from "./components/AuthenticatedShell";
 import type {
   AccountRequestResponse,
   AthleteResponse,
@@ -61,7 +62,19 @@ const pageMotion = {
   exit: { opacity: 0, y: -8 }
 };
 
-export default function ClubManagementPage({ user }: { user: AuthUserResponse }) {
+export default function ClubManagementPage({
+  user,
+  actualUser,
+  viewAsRole,
+  setViewAsRole,
+  onLogout
+}: {
+  user: AuthUserResponse;
+  actualUser: AuthUserResponse;
+  viewAsRole: string;
+  setViewAsRole: (role: string) => void;
+  onLogout: () => void;
+}) {
   const pathParts = window.location.pathname.split("/").filter(Boolean);
   const clubId = pathParts[0] === "clubs" && pathParts[1] ? pathParts[1] : "";
   const params = new URLSearchParams(window.location.search);
@@ -336,46 +349,65 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
   };
 
   if (!clubId) {
+    const directoryStats = {
+      totalClubs: visibleClubs.length,
+      activeMembers: visibleClubs.reduce((sum, org) => sum + (dashboards[org.id]?.activeMembers ?? 0), 0),
+      totalAthletes: visibleClubs.reduce((sum, org) => sum + (dashboards[org.id]?.activeAthletes ?? 0), 0),
+      needsAttention: visibleClubs.filter((org) => {
+        const dashboard = dashboards[org.id];
+        return !dashboard || dashboard.attendanceRate < 70 || dashboard.activeMembers === 0;
+      }).length
+    };
     const featuredClub = visibleClubs[0];
     const featuredDashboard = featuredClub ? dashboards[featuredClub.id] : undefined;
 
     return (
-      <main className="club-ops-page">
-        <motion.section className="club-ops-hero" {...pageMotion}>
-          <div className="club-ops-hero-copy">
-            <span className="club-ops-kicker">Trung tâm CLB</span>
-            <h1>Quản lý CLB karate gọn hơn từ roster đến điểm danh.</h1>
-            <p>Dữ liệu thành viên là nguồn gốc cho đăng ký giải, vận hành tatami và dashboard. Nhập một lần, dùng lại nhiều lần.</p>
-          </div>
-          <div className="club-ops-hero-actions">
-            <button className="club-primary-button" onClick={() => setDrawer("club")} disabled={!isAdmin}>
-              <Plus size={18} /> Tạo CLB mới
-            </button>
-            <a className="club-secondary-button" href="/app">Về trang chính</a>
-          </div>
-        </motion.section>
+      <AuthenticatedShell
+        user={user}
+        actualUser={actualUser}
+        viewAsRole={viewAsRole}
+        setViewAsRole={setViewAsRole}
+        onLogout={onLogout}
+        activeNav="clubs"
+        eyebrow="Club operations"
+        title="Danh sách các câu lạc bộ"
+        description="Quét nhanh CLB cần xử lý, lọc theo khu vực và mở thẳng workspace quản lý."
+        breadcrumbs={[{ label: "Ứng dụng", href: "/app" }, { label: "Câu lạc bộ" }]}
+        headerActions={
+          isAdmin
+            ? <button className="auth-page-primary-action button-reset" onClick={() => setDrawer("club")}><Plus size={18} /> Tạo CLB mới</button>
+            : <a className="auth-page-primary-action" href={user.primaryOrganizationId ? `/clubs/${user.primaryOrganizationId}?tab=overview` : "/clubs"}>Mở CLB của tôi</a>
+        }
+      >
+        <section className="auth-metric-strip">
+          <article className="auth-metric-card compact">
+            <span>Tổng CLB</span>
+            <strong>{loadingClubs ? "..." : directoryStats.totalClubs}</strong>
+          </article>
+          <article className="auth-metric-card compact">
+            <span>Thành viên active</span>
+            <strong>{loadingClubs ? "..." : directoryStats.activeMembers}</strong>
+          </article>
+          <article className="auth-metric-card compact">
+            <span>VĐV active</span>
+            <strong>{loadingClubs ? "..." : directoryStats.totalAthletes}</strong>
+          </article>
+          <article className="auth-metric-card compact warn">
+            <span>Cần chú ý</span>
+            <strong>{loadingClubs ? "..." : directoryStats.needsAttention}</strong>
+          </article>
+        </section>
 
-        <section className="club-center-layout">
-          <motion.aside className="club-feature-panel" initial={{ opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }}>
-            <span className="club-ops-kicker">CLB nổi bật</span>
-            {loadingClubs ? <ClubSkeleton /> : featuredClub ? (
-              <>
-                <div className="club-feature-mark">{initials(featuredClub.name)}</div>
-                <h2>{featuredClub.name}</h2>
-                <p>{[featuredClub.province, featuredClub.address].filter(Boolean).join(" - ") || "Chưa có địa chỉ võ đường."}</p>
-                <div className="club-feature-metrics">
-                  <Metric label="Thành viên" value={featuredDashboard?.activeMembers ?? 0} />
-                  <Metric label="VĐV" value={featuredDashboard?.activeAthletes ?? 0} />
-                  <Metric label="Chuyên cần" value={`${Math.round(featuredDashboard?.attendanceRate ?? 0)}%`} />
-                </div>
-                <a className="club-wide-link" href={`/clubs/${featuredClub.id}`}>Mở không gian quản lý <ChevronRight size={18} /></a>
-              </>
-            ) : (
-              <EmptyState title="Chưa có CLB" text="Tạo CLB đầu tiên để bắt đầu quản lý thành viên, VĐV và điểm danh." action={isAdmin ? "Tạo CLB mới" : undefined} onAction={isAdmin ? () => setDrawer("club") : undefined} />
-            )}
-          </motion.aside>
+        <section className="auth-overview-panel">
+          <div className="auth-panel-head">
+            <div>
+              <span>Club directory</span>
+              <h2>Danh sách CLB theo tín hiệu vận hành</h2>
+            </div>
+            {featuredClub ? <a className="auth-inline-link" href={`/clubs/${featuredClub.id}`}>Mở CLB nổi bật <ChevronRight size={15} /></a> : null}
+          </div>
 
-          <motion.section className="club-list-panel" initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }}>
+          <div className="club-directory-toolbar">
             <div className="club-toolbar">
               <label className="club-search">
                 <Search size={18} />
@@ -390,32 +422,45 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
                 {MEMBER_STATUSES.slice(0, 3).map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
               </select>
             </div>
+            {featuredClub && featuredDashboard ? (
+              <div className="club-directory-spotlight">
+                <strong>{featuredClub.name}</strong>
+                <span>{featuredDashboard.activeMembers} thành viên · {Math.round(featuredDashboard.attendanceRate)}% chuyên cần</span>
+              </div>
+            ) : null}
+          </div>
 
-            {error ? <InlineNotice tone="danger" title="Không tải được dữ liệu" text={error} /> : null}
-            {loadingClubs ? <ClubListSkeleton /> : visibleClubs.length === 0 ? (
-              <EmptyState title="Không tìm thấy CLB phù hợp" text="Thử đổi bộ lọc hoặc tạo CLB mới nếu bạn là quản trị hệ thống." />
-            ) : (
-              <motion.div className="club-card-stack" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.055 } } }}>
-                {visibleClubs.map((org) => (
-                  <motion.a className="club-list-card" href={`/clubs/${org.id}`} key={org.id} variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}>
+          {error ? <InlineNotice tone="danger" title="Không tải được dữ liệu" text={error} /> : null}
+          {loadingClubs ? <ClubListSkeleton /> : visibleClubs.length === 0 ? (
+            <EmptyState title="Không tìm thấy CLB phù hợp" text="Thử đổi bộ lọc hoặc tạo CLB mới nếu bạn là quản trị hệ thống." />
+          ) : (
+            <motion.div className="club-card-stack compact" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.04 } } }}>
+              {visibleClubs.map((org) => {
+                const dashboard = dashboards[org.id];
+                const needsAttention = !dashboard || dashboard.attendanceRate < 70 || dashboard.activeMembers === 0;
+                return (
+                  <motion.a className={cx("club-list-card compact", needsAttention && "attention")} href={`/clubs/${org.id}`} key={org.id} variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}>
                     <div className="club-list-identity">
                       <div className="club-mini-mark">{initials(org.name)}</div>
                       <div>
                         <strong>{org.name}</strong>
-                        <span>{org.code || "Chưa có mã"} - {org.province || "Chưa có tỉnh thành"}</span>
+                        <span>{[org.code || "Chưa có mã", org.province || "Chưa có tỉnh thành"].join(" · ")}</span>
                       </div>
                     </div>
-                    <div className="club-list-stats">
-                      <b>{dashboards[org.id]?.activeMembers ?? "-"}</b><span>Thành viên</span>
-                      <b>{dashboards[org.id]?.activeAthletes ?? "-"}</b><span>VĐV</span>
-                      <b>{Math.round(dashboards[org.id]?.attendanceRate ?? 0)}%</b><span>Chuyên cần</span>
+                    <div className="club-list-summary">
+                      <span>{dashboard?.activeMembers ?? 0} thành viên</span>
+                      <span>{dashboard?.activeAthletes ?? 0} VĐV</span>
+                      <span>{Math.round(dashboard?.attendanceRate ?? 0)}% chuyên cần</span>
                     </div>
-                    <ChevronRight size={20} />
+                    <div className="club-list-cta">
+                      <strong>Mở quản lý</strong>
+                      <ChevronRight size={18} />
+                    </div>
                   </motion.a>
-                ))}
-              </motion.div>
-            )}
-          </motion.section>
+                );
+              })}
+            </motion.div>
+          )}
         </section>
 
         <ClubDrawer drawer={drawer} title="Tạo CLB mới" onClose={() => setDrawer(null)}>
@@ -433,25 +478,54 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
             })}
           />
         </ClubDrawer>
-      </main>
+      </AuthenticatedShell>
     );
   }
 
   if (!selectedOrg && !loadingClubs && organizations.length > 0) {
     return (
-      <main className="club-ops-page">
+      <AuthenticatedShell
+        user={user}
+        actualUser={actualUser}
+        viewAsRole={viewAsRole}
+        setViewAsRole={setViewAsRole}
+        onLogout={onLogout}
+        activeNav="clubs"
+        eyebrow="Club operations"
+        title="Không có quyền truy cập CLB này"
+        description="Tài khoản hiện tại chỉ được xem CLB được phân quyền."
+        breadcrumbs={[{ label: "Ứng dụng", href: "/app" }, { label: "Câu lạc bộ", href: "/clubs" }, { label: "Không khả dụng" }]}
+      >
         <section className="club-access-denied">
           <Shield size={30} />
           <h1>Không có quyền truy cập CLB này</h1>
           <p>Tài khoản hiện tại chỉ được xem CLB được phân quyền. Hãy quay lại danh sách CLB để chọn đúng đơn vị.</p>
           <a className="club-primary-button" href="/clubs">Quay lại trung tâm CLB</a>
         </section>
-      </main>
+      </AuthenticatedShell>
     );
   }
 
   return (
-    <main className={cx("club-ops-page club-workspace-page", sidebarCollapsed && "sidebar-collapsed")}>
+    <AuthenticatedShell
+      user={user}
+      actualUser={actualUser}
+      viewAsRole={viewAsRole}
+      setViewAsRole={setViewAsRole}
+      onLogout={onLogout}
+      activeNav="clubs"
+      eyebrow={selectedOrg?.code || "Club workspace"}
+      title={selectedOrg?.name || overview?.organizationName || "Đang tải CLB"}
+      description="Giữ tab nghiệp vụ CLB hiện có trong một shell thống nhất để điều hướng xuyên module rõ ràng hơn."
+      breadcrumbs={[{ label: "Ứng dụng", href: "/app" }, { label: "Câu lạc bộ", href: "/clubs" }, { label: selectedOrg?.shortName || selectedOrg?.name || "Workspace" }]}
+      headerActions={
+        <>
+          <button className="auth-page-secondary-action button-reset" onClick={() => setDrawer("member")}><UserPlus size={18} /> Thêm thành viên</button>
+          <button className="auth-page-primary-action button-reset" onClick={() => setDrawer("schedule")}><CalendarCheck size={18} /> Sửa lịch tập</button>
+        </>
+      }
+    >
+    <main className={cx("club-ops-page club-workspace-page auth-embedded-page", sidebarCollapsed && "sidebar-collapsed")}>
       <section className="club-workspace-shell">
         <aside className="club-context-panel">
           <div className="club-sidebar-head">
@@ -464,20 +538,21 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
               {sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
             </button>
           </div>
-          <div className="club-sidebar-copy">
-            <h2>{selectedOrg?.shortName || selectedOrg?.name || "CLB"}</h2>
-            <p>{selectedOrg?.address || "Chưa có địa chỉ võ đường."}</p>
+          <div className="club-context-identity">
+            <div className="club-sidebar-copy">
+              <h2>{selectedOrg?.shortName || selectedOrg?.name || "CLB"}</h2>
+              <p>{selectedOrg?.address || "Chưa có địa chỉ võ đường."}</p>
+            </div>
+            <div className="club-context-meta">
+              <span>{selectedOrg?.province || "Chưa cập nhật tỉnh thành"}</span>
+              <span>{selectedOrg?.contactPhone || selectedOrg?.contactEmail || "Chưa có liên hệ"}</span>
+            </div>
           </div>
           <a className="club-sidebar-home" href="/clubs" title="Trung tâm CLB">
             <Home size={18} />
             <span>Trung tâm CLB</span>
           </a>
-          <dl className="club-profile-list">
-            <div><dt>Tỉnh thành</dt><dd>{selectedOrg?.province || "Chưa cập nhật"}</dd></div>
-            <div><dt>Điện thoại</dt><dd>{selectedOrg?.contactPhone || "Chưa cập nhật"}</dd></div>
-            <div><dt>Email</dt><dd>{selectedOrg?.contactEmail || "Chưa cập nhật"}</dd></div>
-          </dl>
-          <nav className="club-tab-list">
+          <nav className="club-tab-list workspace">
             {CLUB_TABS.map((tab) => (
               <button key={tab.id} className={cx(activeTab === tab.id && "active")} onClick={() => setTab(tab.id)} title={tab.label}>
                 <b className="club-tab-code">{tabShort(tab.id)}</b>
@@ -911,6 +986,7 @@ export default function ClubManagementPage({ user }: { user: AuthUserResponse })
         />
       </ClubDrawer>
     </main>
+    </AuthenticatedShell>
   );
 }
 

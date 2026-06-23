@@ -41,16 +41,16 @@ import {
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import ClubManagementPage from "./ClubManagementPage";
+import { AuthenticatedHomePage } from "./AuthenticatedHomePage";
 import { PublicTournamentListPage } from "./PublicTournamentListPage";
 import { TournamentManagePage } from "./TournamentManagePage";
 import { TournamentPublicDetailPage } from "./TournamentPublicDetailPage";
 import TournamentStandingsPage from "./TournamentStandingsPage";
 import { DisplayView, OverlayView, ScoreboardFrame as SpectatorScoreboard } from "./scoreboard";
-import { OperationsHub } from "./OperationsHub";
-import { Homepage } from "./components/Homepage";
+import { AuthenticatedShell } from "./components/AuthenticatedShell";
 import "./tournament-styles.css";
-import { NotificationBell } from "./NotificationBell";
 import { apiDelete, apiGet, apiPatch, apiPost, getAuthToken, setAuthToken } from "./apiClient";
+import { canManageClub as shellCanManageClub } from "./authNavigation";
 import { useScoreboard } from "./useScoreboard";
 import type {
   AuthResponse,
@@ -144,10 +144,14 @@ export default function App() {
     setViewAsRole(role);
     window.localStorage.setItem(VIEW_AS_ROLE_KEY, role);
   };
-  if (route.includes("member")) return <MemberPortalPage user={effectiveUser!} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} />;
+  const handleLogout = () => {
+    setAuthToken(null);
+    window.location.href = "/login";
+  };
+  if (route.includes("member")) return <MemberPortalPage user={effectiveUser!} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} onLogout={handleLogout} />;
   if (route.includes("dashboard/clubs")) return <ClubDashboardRedirect user={effectiveUser!} />;
   if (route.includes("dashboard/tournaments")) return <TournamentDashboardPage user={effectiveUser!} />;
-  if (route.includes("clubs")) return <ClubManagementPage user={effectiveUser!} />;
+  if (route.includes("clubs")) return <ClubManagementPage user={effectiveUser!} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} onLogout={handleLogout} />;
   if (route === "/tournaments/public") return <PublicTournamentListPage />;
   {
     const standingsMatch = /^\/standings\/tournaments\/([^/]+)/.exec(route);
@@ -160,7 +164,17 @@ export default function App() {
     const manageMatch = /^\/tournaments\/([^/]+)\/manage/.exec(route);
     if (manageMatch) {
       const tournamentId = manageMatch[1];
-      return <TournamentManagePage tournamentId={tournamentId} />;
+      if (!effectiveUser) return <LoginRedirect />;
+      return (
+        <TournamentManagePage
+          tournamentId={tournamentId}
+          user={effectiveUser}
+          actualUser={authUser!}
+          viewAsRole={viewAsRole}
+          setViewAsRole={setViewAs}
+          onLogout={handleLogout}
+        />
+      );
     }
   }
   {
@@ -170,15 +184,12 @@ export default function App() {
       return <TournamentPublicDetailPage tournamentId={tournamentId} />;
     }
   }
-  if (route.includes("tournaments")) return <TournamentManagementPage user={effectiveUser!} />;
-  if (route.includes("app") || (!route.includes("display") && !route.includes("overlay") && !route.includes("judge") && !route.includes("control"))) {
+  if (route.includes("tournaments")) return <TournamentManagementPage user={effectiveUser!} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} onLogout={handleLogout} />;
+  if (route.includes("home") || route.includes("app") || (!route.includes("display") && !route.includes("overlay") && !route.includes("judge") && !route.includes("control"))) {
     if (!effectiveUser) return <LoginRedirect />;
-    // Admin / club manager / coach → danh sách CLB (global admin thấy toàn bộ, còn lại thấy CLB của mình).
-    // Thành viên thường → trang chủ cá nhân (Homepage).
-    if (canManageClub(effectiveUser)) {
-      return <ClubManagementPage user={effectiveUser} />;
-    }
-    return <HomePage connected={api.connection.connected} user={effectiveUser} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} />;
+    return shellCanManageClub(effectiveUser)
+      ? <AuthenticatedHomePage user={effectiveUser} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} onLogout={handleLogout} />
+      : <MemberPortalPage user={effectiveUser} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} onLogout={handleLogout} />;
   }
   const tatamiApi = hasTatamiId ? api : manualApi;
   if (hasTatamiId && !api.match) return route.includes("control") && authUser ? <AssignMatchPage refresh={api.refresh} /> : <LoadingScreen connected={api.connection.connected} />;
@@ -186,7 +197,11 @@ export default function App() {
   if (route.includes("overlay")) return <OverlayView payload={tatamiApi.payload!} />;
   if (route.includes("judge")) return <JudgePage payload={tatamiApi.payload!} send={tatamiApi.send} />;
   if (route.includes("control")) return <ControlPage api={tatamiApi} />;
-  return effectiveUser ? <HomePage connected={api.connection.connected} user={effectiveUser} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} /> : <LoginRedirect />;
+  return effectiveUser
+    ? (shellCanManageClub(effectiveUser)
+      ? <AuthenticatedHomePage user={effectiveUser} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} onLogout={handleLogout} />
+      : <MemberPortalPage user={effectiveUser} actualUser={authUser!} viewAsRole={viewAsRole} setViewAsRole={setViewAs} onLogout={handleLogout} />)
+    : <LoginRedirect />;
 }
 
 function useManualTatami(role: string) {
@@ -666,33 +681,18 @@ function LoadingScreen({ connected }: { connected: boolean }) {
   );
 }
 
-function HomePage({
-  connected,
-  user,
-  actualUser,
-  viewAsRole,
-  setViewAsRole
-}: {
-  connected: boolean;
-  user: AuthUserResponse;
-  actualUser: AuthUserResponse;
-  viewAsRole: string;
-  setViewAsRole: (role: string) => void;
-}) {
-  return <Homepage user={user} />;
-}
-
-
 function MemberPortalPage({
   user,
   actualUser,
   viewAsRole,
-  setViewAsRole
+  setViewAsRole,
+  onLogout
 }: {
   user: AuthUserResponse;
   actualUser: AuthUserResponse;
   viewAsRole: string;
   setViewAsRole: (role: string) => void;
+  onLogout: () => void;
 }) {
   const [profile, setProfile] = useState<MemberClubProfileResponse | null>(null);
   const [fees, setFees] = useState<MemberFeeSummaryResponse | null>(null);
@@ -740,122 +740,154 @@ function MemberPortalPage({
   const memberships = profile?.memberships ?? [];
   const feeRows = fees?.assignments ?? [];
   const attendanceRows = attendance?.sessionRows ?? [];
+  const nextSession = attendanceRows[0];
+  const pendingFeeRows = feeRows.filter((row) => Number(row.amountDue) - Number(row.paidAmount) > 0);
 
   return (
-    <main className="member-portal-page">
-      <section className="member-portal-shell">
-        <header className="app-hub-hero member">
-          <div>
-            <span className="landing-kicker">Member portal</span>
-            <h1>Chào {user.displayName}, đây là dữ liệu CLB của bạn.</h1>
-            <p>{user.roles.join(", ")}{user.primaryOrganizationName ? ` - ${user.primaryOrganizationName}` : ""}</p>
-          </div>
-          <div className="app-hub-status">
-            {hasRole(actualUser, "GLOBAL_ADMIN") ? (
-              <label className="view-as-select">
-                <span>View as</span>
-                <select value={viewAsRole} onChange={(event) => setViewAsRole(event.target.value)}>
-                  <option value="ACTUAL">Actual</option>
-                  <option value="GLOBAL_ADMIN">Global admin</option>
-                  <option value="CLUB_MANAGER">Admin CLB</option>
-                  <option value="MEMBER">Member</option>
-                </select>
-              </label>
-            ) : null}
-            <NotificationBell userId={actualUser.id} />
-            <a className="app-hub-logout" href="/app">Hub</a>
-            <button className="app-hub-logout" onClick={() => {
-              setAuthToken(null);
-              window.location.href = "/";
-            }}>Đăng xuất</button>
-          </div>
-        </header>
+    <AuthenticatedShell
+      user={user}
+      actualUser={actualUser}
+      viewAsRole={viewAsRole}
+      setViewAsRole={setViewAsRole}
+      onLogout={onLogout}
+      activeNav="overview"
+      eyebrow="Member portal"
+      title={`Chào ${user.displayName}`}
+      description={`${user.primaryOrganizationName || "Cổng thành viên"} · xem học phí, lịch tập và yêu cầu xin nghỉ trong một nơi.`}
+      breadcrumbs={[{ label: "Ứng dụng", href: "/app" }, { label: "Portal cá nhân" }]}
+      headerActions={<a className="auth-page-primary-action" href="/tournaments/public">Xem giải đấu</a>}
+    >
+      {error ? <div className="auth-inline-error"><AlertTriangle size={18} /> {error}</div> : null}
 
-        {error ? <p className="error-text">{error}</p> : null}
+      <section className="auth-metric-strip member-metric-strip">
+        <div className="auth-metric-card compact">
+          <span>CLB đang tham gia</span>
+          <strong>{memberships.length}</strong>
+        </div>
+        <div className="auth-metric-card compact">
+          <span>Còn phải đóng</span>
+          <strong>{money(fees?.totalRemaining)}đ</strong>
+        </div>
+        <div className="auth-metric-card compact">
+          <span>Buổi đã ghi nhận</span>
+          <strong>{attendance?.sessions ?? 0}</strong>
+        </div>
+        <div className="auth-metric-card compact">
+          <span>Yêu cầu chờ duyệt</span>
+          <strong>{attendance?.pendingLeaveRequests ?? 0}</strong>
+        </div>
+      </section>
 
-        <section className="member-summary-grid">
-          <div className="member-summary-card">
-            <span>CLB đang tham gia</span>
-            <strong>{memberships.length}</strong>
-          </div>
-          <div className="member-summary-card">
-            <span>Còn phải đóng</span>
-            <strong>{money(fees?.totalRemaining)}đ</strong>
-          </div>
-          <div className="member-summary-card">
-            <span>Buổi đã ghi nhận</span>
-            <strong>{attendance?.sessions ?? 0}</strong>
-          </div>
-          <div className="member-summary-card">
-            <span>Request chờ duyệt</span>
-            <strong>{attendance?.pendingLeaveRequests ?? 0}</strong>
-          </div>
-        </section>
-
-        <section className="member-portal-grid">
-          <article className="member-panel">
-            <div className="member-panel-head">
-              <span>Hồ sơ CLB</span>
-              <h2>Thông tin thành viên</h2>
+      <section className="auth-overview-columns sharp member-overview-layout">
+        <article className="auth-overview-panel primary">
+          <div className="auth-panel-head">
+            <div>
+              <span>Tổng quan cá nhân</span>
+              <h2>Việc cần theo dõi</h2>
             </div>
+            <a className="auth-inline-link" href="/tournaments/public">Giải công khai</a>
+          </div>
+          <div className="auth-list-block">
+            <div className="auth-list-row">
+              <div>
+                <strong>Học phí còn lại</strong>
+                <span>{pendingFeeRows.length ? `${pendingFeeRows.length} khoản đang cần xử lý` : "Không có khoản nào chờ đóng."}</span>
+              </div>
+              <b>{money(fees?.totalRemaining)}đ</b>
+            </div>
+            <div className="auth-list-row">
+              <div>
+                <strong>Buổi tập kế tiếp</strong>
+                <span>{nextSession ? `${nextSession.name} · ${nextSession.organizationName}` : "Chưa có lịch tập sắp tới."}</span>
+              </div>
+              <b>{nextSession?.scheduledDate || nextSession?.scheduledAt?.slice(0, 10) || "Chưa xếp lịch"}</b>
+            </div>
+            <div className="auth-list-row">
+              <div>
+                <strong>Trạng thái xin nghỉ</strong>
+                <span>{attendance?.pendingLeaveRequests ? "Vẫn còn yêu cầu đang chờ duyệt." : "Không có yêu cầu đang chờ duyệt."}</span>
+              </div>
+              <b>{attendance?.pendingLeaveRequests ?? 0}</b>
+            </div>
+          </div>
+        </article>
+
+        <article className="auth-overview-panel">
+          <div className="auth-panel-head">
+            <div>
+              <span>Hồ sơ CLB</span>
+              <h2>Liên kết thành viên</h2>
+            </div>
+          </div>
+          <div className="auth-list-block">
             {memberships.length === 0 ? <MemberEmpty text="Tài khoản này chưa được liên kết với thành viên CLB." /> : memberships.map((member) => (
-              <div className="member-row" key={member.id}>
+              <div className="auth-list-row" key={member.id}>
                 <div>
                   <strong>{member.personName || member.userName || user.displayName}</strong>
-                  <span>{member.organizationName} / {member.role} / {member.status}</span>
+                  <span>{member.organizationName} · {member.role} · {member.status}</span>
                 </div>
-                <small>{member.phone || member.email || "Chưa có liên hệ"}</small>
+                <b>{member.phone || member.email || "Chưa có liên hệ"}</b>
               </div>
             ))}
-          </article>
+          </div>
+        </article>
+      </section>
 
-          <article className="member-panel">
-            <div className="member-panel-head">
+      <section className="auth-overview-columns sharp member-data-layout" id="fees">
+        <article className="auth-overview-panel">
+          <div className="auth-panel-head">
+            <div>
               <span>Tài chính</span>
               <h2>Các khoản của bạn</h2>
             </div>
+          </div>
+          <div className="auth-list-block">
             {feeRows.length === 0 ? <MemberEmpty text="Chưa có khoản phí nào được gán." /> : feeRows.map((row) => (
-              <div className="member-row" key={row.id}>
+              <div className="auth-list-row" key={row.id}>
                 <div>
                   <strong>{row.feeItemName}</strong>
-                  <span>{row.status} / hạn {row.dueDate || "chưa đặt"}</span>
+                  <span>{row.status} · hạn {row.dueDate || "chưa đặt"}</span>
                 </div>
-                <small>{money(Number(row.amountDue) - Number(row.paidAmount))}đ</small>
+                <b>{money(Number(row.amountDue) - Number(row.paidAmount))}đ</b>
               </div>
             ))}
-          </article>
-        </section>
-
-        <section className="member-panel attendance">
-          <div className="member-panel-head">
-            <span>Chuyên cần</span>
-            <h2>Lịch tập và điểm danh của bạn</h2>
           </div>
-          {attendanceRows.length === 0 ? <MemberEmpty text="Chưa có buổi tập nào để hiển thị." /> : attendanceRows.map((session) => {
-            const leave = session.leaveRequest;
-            return (
-              <div className="member-attendance-row" key={session.id}>
-                <div>
-                  <strong>{session.name}</strong>
-                  <span>{session.organizationName} / {session.scheduledDate || session.scheduledAt?.slice(0, 10) || "chưa xếp lịch"}</span>
-                  <small>Điểm danh: {session.record?.status || "Chưa ghi nhận"}{leave ? ` / Xin nghỉ: ${leave.status}` : ""}</small>
-                </div>
-                {!leave ? (
-                  <div className="member-leave-box">
-                    <input
-                      value={leaveReasonBySession[session.id] || ""}
-                      onChange={(event) => setLeaveReasonBySession((current) => ({ ...current, [session.id]: event.target.value }))}
-                      placeholder="Lý do xin nghỉ"
-                    />
-                    <button disabled={busy} onClick={() => requestLeave(session.id)}>Gửi xin nghỉ</button>
+        </article>
+
+        <article className="auth-overview-panel attendance" id="attendance">
+          <div className="auth-panel-head">
+            <div>
+              <span>Chuyên cần</span>
+              <h2>Lịch tập và xin nghỉ</h2>
+            </div>
+          </div>
+          <div className="auth-list-block attendance">
+            {attendanceRows.length === 0 ? <MemberEmpty text="Chưa có buổi tập nào để hiển thị." /> : attendanceRows.map((session) => {
+              const leave = session.leaveRequest;
+              return (
+                <div className="auth-list-row member-attendance-line" key={session.id}>
+                  <div>
+                    <strong>{session.name}</strong>
+                    <span>{session.organizationName} · {session.scheduledDate || session.scheduledAt?.slice(0, 10) || "chưa xếp lịch"}</span>
+                    <small>Điểm danh: {session.record?.status || "Chưa ghi nhận"}{leave ? ` · Xin nghỉ: ${leave.status}` : ""}</small>
                   </div>
-                ) : <small className="member-leave-status">{leave.reason}</small>}
-              </div>
-            );
-          })}
-        </section>
+                  {!leave ? (
+                    <div className="member-leave-box">
+                      <input
+                        value={leaveReasonBySession[session.id] || ""}
+                        onChange={(event) => setLeaveReasonBySession((current) => ({ ...current, [session.id]: event.target.value }))}
+                        placeholder="Lý do xin nghỉ"
+                      />
+                      <button disabled={busy} onClick={() => requestLeave(session.id)}>Gửi</button>
+                    </div>
+                  ) : <small className="member-leave-status">{leave.reason}</small>}
+                </div>
+              );
+            })}
+          </div>
+        </article>
       </section>
-    </main>
+    </AuthenticatedShell>
   );
 }
 
@@ -1077,7 +1109,19 @@ function AuthVisual() {
   );
 }
 
-function TournamentManagementPage({ user }: { user: AuthUserResponse }) {
+function TournamentManagementPage({
+  user,
+  actualUser,
+  viewAsRole,
+  setViewAsRole,
+  onLogout
+}: {
+  user: AuthUserResponse;
+  actualUser: AuthUserResponse;
+  viewAsRole: string;
+  setViewAsRole: (role: string) => void;
+  onLogout: () => void;
+}) {
   const [organizations, setOrganizations] = useState<OrganizationResponse[]>([]);
   const [tournaments, setTournaments] = useState<TournamentResponse[]>([]);
   const [participants, setParticipants] = useState<TournamentParticipantResponse[]>([]);
@@ -1230,34 +1274,60 @@ function TournamentManagementPage({ user }: { user: AuthUserResponse }) {
   };
 
   return (
-    <main className="tournament-admin-page">
-      <aside className="tournament-admin-sidebar">
-        <div className="tournament-sidebar-head">
-          <a className="tournament-mark" href="/app">K</a>
-          <div>
-            <span>Karate Ops</span>
-            <h1>Quản lý giải</h1>
+    <AuthenticatedShell
+      user={user}
+      actualUser={actualUser}
+      viewAsRole={viewAsRole}
+      setViewAsRole={setViewAsRole}
+      onLogout={onLogout}
+      activeNav="tournaments"
+      eyebrow="Tournament operations"
+      title={selectedTournament?.name || "Quản lý giải đấu"}
+      description="Giữ nguyên command-center cho giải đấu, nhưng đặt nó trong shell chung để không còn cảm giác nhảy sang app khác."
+      breadcrumbs={[{ label: "Ứng dụng", href: "/app" }, { label: "Giải đấu" }]}
+      headerActions={<a className="auth-page-primary-action" href="/tournaments/public">Xem giải công khai</a>}
+    >
+    <main className="tournament-admin-page auth-embedded-page tournament-ops-shell">
+      <section className="auth-metric-strip tournament-admin-metrics">
+        <div className="auth-metric-card compact">
+          <span>Giải hiển thị</span>
+          <strong>{visibleTournaments.length}</strong>
+        </div>
+        <div className="auth-metric-card compact">
+          <span>Đoàn đã duyệt</span>
+          <strong>{approvedParticipants.length}</strong>
+        </div>
+        <div className="auth-metric-card compact">
+          <span>Tatami active</span>
+          <strong>{tatamis.length}</strong>
+        </div>
+        <div className="auth-metric-card compact">
+          <span>Checklist sẵn sàng</span>
+          <strong>{completedSetup}/5</strong>
+        </div>
+      </section>
+
+      <section className="auth-overview-columns sharp tournament-ops-layout">
+        <aside className="auth-overview-panel primary tournament-ops-sidebar">
+          <div className="auth-panel-head">
+            <div>
+              <span>Điều phối giải</span>
+              <h2>Chọn hoặc tạo giải</h2>
+            </div>
           </div>
-        </div>
 
-        <nav className="tournament-sidebar-nav">
-          <a href="/app"><Gauge /> Home</a>
-          <a href="/clubs"><Shield /> CLB</a>
-          <a className="active" href="/tournaments"><Trophy /> Tournament</a>
-        </nav>
+          <div className="club-directory-toolbar tournament-directory-toolbar">
+            <label>
+              <Search size={16} />
+              <input value={tournamentSearch} onChange={(event) => setTournamentSearch(event.target.value)} placeholder="Tìm giải, mã, đơn vị" />
+            </label>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="ALL">Tất cả trạng thái</option>
+              {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+            </select>
+          </div>
 
-        <div className="tournament-sidebar-tools">
-          <label className="tournament-search">
-            <Search />
-            <input value={tournamentSearch} onChange={(event) => setTournamentSearch(event.target.value)} placeholder="Tìm giải, mã, đơn vị" />
-          </label>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="ALL">Tất cả trạng thái</option>
-            {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
-          </select>
-        </div>
-
-        <form className="tournament-create-form" onSubmit={(event) => submit(event, async () => {
+          <form className="tournament-create-form compact" onSubmit={(event) => submit(event, async () => {
           const created = await apiPost<TournamentResponse>("/api/tournaments", {
             name: tournamentName,
             code: slugCode(tournamentName),
@@ -1276,7 +1346,7 @@ function TournamentManagementPage({ user }: { user: AuthUserResponse }) {
           await loadBase();
           chooseTournament(created.id);
         })}>
-          <div className="tournament-panel-head compact">
+          <div className="auth-panel-head compact">
             <div>
               <span>Tạo giải mới</span>
               <strong>Khởi tạo hồ sơ tournament</strong>
@@ -1315,15 +1385,14 @@ function TournamentManagementPage({ user }: { user: AuthUserResponse }) {
           <button className="tournament-primary-button" disabled={busy || !tournamentName.trim() || !ownerOrganizationId}>Tạo giải</button>
         </form>
 
-        <div className="tournament-list">
+        <div className="auth-list-block tournament-directory-list">
           {visibleTournaments.length === 0 ? (
             <TournamentEmptyState icon={<Trophy />} title="Chưa có giải phù hợp" text="Tạo giải mới hoặc bỏ lọc để xem toàn bộ danh sách." />
           ) : visibleTournaments.map((event) => (
-            <button key={event.id} className={cx("tournament-list-row", event.id === selectedTournamentId && "active")} onClick={() => chooseTournament(event.id)}>
-              <span className={cx("tournament-status-dot", event.status.toLowerCase())} />
+            <button key={event.id} className={cx("auth-list-row", "tournament-directory-row", event.id === selectedTournamentId && "active")} onClick={() => chooseTournament(event.id)}>
               <div>
                 <strong>{event.name}</strong>
-                <small>{event.ownerOrganizationName || "Global"} / {event.code || slugCode(event.name)}</small>
+                <span>{event.ownerOrganizationName || "Global"} · {event.code || slugCode(event.name)}</span>
               </div>
               <b>{event.status}</b>
             </button>
@@ -1331,8 +1400,8 @@ function TournamentManagementPage({ user }: { user: AuthUserResponse }) {
         </div>
       </aside>
 
-      <section className="tournament-admin-main">
-        <header className="tournament-command-bar">
+      <section className="auth-overview-panel tournament-ops-main">
+        <header className="tournament-command-bar sharp">
           <div className="tournament-command-title">
             <span className="tournament-kicker">WKF operations console</span>
             <h2>{selectedTournament?.name || "Chọn hoặc tạo một giải đấu"}</h2>
@@ -1349,11 +1418,6 @@ function TournamentManagementPage({ user }: { user: AuthUserResponse }) {
             }, setBusy, setError)}>
               <Flag /> {selectedTournament?.status === "REGISTRATION_OPEN" ? "Về draft" : "Mở đăng ký"}
             </button>
-            <NotificationBell userId={user.id} />
-            <button className="tournament-ghost-button" onClick={() => {
-              setAuthToken(null);
-              window.location.href = "/login";
-            }}>Logout</button>
           </div>
         </header>
 
@@ -1749,7 +1813,9 @@ function TournamentManagementPage({ user }: { user: AuthUserResponse }) {
           ) : null}
         </section>
       </section>
+      </section>
     </main>
+    </AuthenticatedShell>
   );
 }
 
