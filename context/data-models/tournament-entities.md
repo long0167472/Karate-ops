@@ -2,8 +2,8 @@
 name: tournament-entities
 description: Entity schema for Tournament, TournamentParticipant, Category, Entry, CategoryResult, Bracket
 type: data-model
-version: "1.0"
-last_updated: "2026-06-11"
+version: "1.1"
+last_updated: "2026-07-01"
 metadata:
   owner: backend
 source_references:
@@ -126,6 +126,8 @@ Category is locked after draw: `status = "DRAWN"`. No entry changes allowed post
 **WeighInStatus**: `VALID, MISSING_WEIGHT, OUT_OF_CLASS, NEEDS_ORGANIZER_REVIEW`
 
 **Weight validation**: OUT_OF_CLASS does NOT block registration. Sets `weighInStatus` and adds to `validationNotes`. See [known-issues/patterns.md Pattern 8].
+
+**WKF 2026 10-second rule**: `Entry.status = WITHDRAWN` is the per-category continuation marker. When a Kumite athlete is ruled `UNFIT_TEN_SECOND_RULE`, backend marks that athlete's remaining `KUMITE` / `TEAM_KUMITE` entries in the same tournament as `WITHDRAWN`; `KATA` / `TEAM_KATA` entries are not changed. `TournamentParticipant.status` is delegation-wide club state and is not used for athlete medical withdrawal.
 
 ---
 
