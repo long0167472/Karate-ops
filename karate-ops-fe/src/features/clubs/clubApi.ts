@@ -7,6 +7,7 @@ import type {
   ClubMemberResponse,
   ClubRosterResponse,
   ClubTrainingScheduleResponse,
+  ManagedClubResponse,
   OrganizationAttendanceDashboardResponse,
   OrganizationDashboardOverviewResponse,
   OrganizationResponse
@@ -30,13 +31,10 @@ export interface ClubWorkspaceData {
   finance: ClubFeeOverviewResponse;
 }
 
-export async function fetchClubDirectory(isAdmin: boolean, primaryOrganizationId?: string): Promise<ClubDirectoryData> {
-  const organizations = await apiGet<OrganizationResponse[]>("/api/organizations");
-  const clubs = organizations.filter((org) => org.type === "CLUB" && (isAdmin || org.id === primaryOrganizationId));
-  const results = await Promise.allSettled(
-    clubs.map((org) => apiGet<OrganizationDashboardOverviewResponse>(`/api/dashboard/organizations/${org.id}/overview`))
-  );
-  const dashboards = Object.fromEntries(results.flatMap((result, index) => result.status === "fulfilled" ? [[clubs[index].id, result.value]] : []));
+export async function fetchClubDirectory(): Promise<ClubDirectoryData> {
+  const managedClubs = await apiGet<ManagedClubResponse[]>("/api/organizations/managed-clubs");
+  const clubs = managedClubs.map((row) => row.club);
+  const dashboards = Object.fromEntries(managedClubs.map((row) => [row.club.id, row.overview]));
   return { clubs, dashboards };
 }
 
@@ -49,7 +47,7 @@ export async function fetchClubWorkspace(id: string): Promise<ClubWorkspaceData>
     apiGet<ClubRosterResponse[]>(`/api/organizations/${id}/roster`),
     apiGet<AttendanceSessionResponse[]>(`/api/organizations/${id}/attendance-sessions`),
     apiGet<ClubTrainingScheduleResponse>(`/api/organizations/${id}/training-schedule`),
-    apiGet<AthleteResponse[]>("/api/athletes"),
+    apiGet<AthleteResponse[]>(`/api/organizations/${id}/athletes`),
     apiGet<ClubFeeOverviewResponse>(`/api/organizations/${id}/finance/overview`)
   ]);
   return {
@@ -60,7 +58,7 @@ export async function fetchClubWorkspace(id: string): Promise<ClubWorkspaceData>
     roster,
     sessions,
     schedule,
-    athletes: athletes.filter((athlete) => athlete.primaryOrganizationId === id),
+    athletes,
     finance
   };
 }

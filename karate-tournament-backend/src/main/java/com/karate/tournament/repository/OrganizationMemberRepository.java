@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface OrganizationMemberRepository extends JpaRepository<OrganizationMember, UUID> {
   List<OrganizationMember> findByOrganization_IdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID organizationId);
@@ -16,6 +18,19 @@ public interface OrganizationMemberRepository extends JpaRepository<Organization
 
   long countByOrganization_IdAndStatusAndDeletedAtIsNull(UUID organizationId, ClubMemberStatus status);
 
+  @Query("""
+      select m.organization.id as organizationId, count(m) as total
+      from OrganizationMember m
+      where m.organization.id in :organizationIds
+        and m.status = :status
+        and m.deletedAt is null
+      group by m.organization.id
+      """)
+  List<OrganizationCountProjection> countByOrganizationIdsAndStatus(
+      @Param("organizationIds") List<UUID> organizationIds,
+      @Param("status") ClubMemberStatus status
+  );
+
   Optional<OrganizationMember> findByOrganization_IdAndPerson_IdAndDeletedAtIsNull(UUID organizationId, UUID personId);
 
   Optional<OrganizationMember> findByOrganization_IdAndPerson_IdAndStatusAndDeletedAtIsNull(
@@ -23,4 +38,10 @@ public interface OrganizationMemberRepository extends JpaRepository<Organization
       UUID personId,
       ClubMemberStatus status
   );
+
+  interface OrganizationCountProjection {
+    UUID getOrganizationId();
+
+    Long getTotal();
+  }
 }

@@ -7,6 +7,8 @@ public enum MatchStatus {
   PAUSED,
   REVIEW,
   HANTEI,
+  HIKIWAKE,
+  RESULT_PENDING_CONFIRMATION,
   VOTING,
   COMPLETED,
   LOCKED,

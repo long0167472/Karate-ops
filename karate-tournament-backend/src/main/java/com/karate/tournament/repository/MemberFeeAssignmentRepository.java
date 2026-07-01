@@ -12,4 +12,6 @@ public interface MemberFeeAssignmentRepository extends JpaRepository<MemberFeeAs
   List<MemberFeeAssignment> findByMember_IdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID memberId);
 
   Optional<MemberFeeAssignment> findByIdAndDeletedAtIsNull(UUID id);
+
+  Optional<MemberFeeAssignment> findFirstByMember_IdAndFeeItem_IdAndDeletedAtIsNull(UUID memberId, UUID feeItemId);
 }

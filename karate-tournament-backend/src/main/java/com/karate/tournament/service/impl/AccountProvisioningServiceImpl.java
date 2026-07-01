@@ -7,7 +7,6 @@ import com.karate.tournament.entity.OrganizationMember;
 import com.karate.tournament.entity.Person;
 import com.karate.tournament.entity.enums.ClubMemberRole;
 import com.karate.tournament.entity.enums.ClubMemberStatus;
-import com.karate.tournament.entity.enums.PaymentStatus;
 import com.karate.tournament.exception.BusinessConflictException;
 import com.karate.tournament.repository.AppUserRepository;
 import com.karate.tournament.repository.OrganizationMemberRepository;
@@ -66,10 +65,6 @@ public class AccountProvisioningServiceImpl implements AccountProvisioningServic
     member.joinedAt = LocalDate.now();
     member.student = request.student() == null || request.student();
     member.attendanceViewEnabled = request.attendanceViewEnabled() == null || request.attendanceViewEnabled();
-    member.tuitionStatus = request.tuitionStatus() == null ? PaymentStatus.PENDING : request.tuitionStatus();
-    if (request.tuitionPaidAmount() != null) member.tuitionPaidAmount = request.tuitionPaidAmount();
-    member.otherFeeStatus = request.otherFeeStatus() == null ? PaymentStatus.PENDING : request.otherFeeStatus();
-    if (request.otherFeePaidAmount() != null) member.otherFeePaidAmount = request.otherFeePaidAmount();
     member.paymentNote = trimToNull(request.paymentNote());
     member.memberNote = trimToNull(request.memberNote());
     members.save(member);

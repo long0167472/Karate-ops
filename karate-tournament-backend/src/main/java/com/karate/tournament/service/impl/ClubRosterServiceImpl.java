@@ -72,6 +72,9 @@ public class ClubRosterServiceImpl implements ClubRosterService {
   public ClubRosterResponse update(UUID organizationId, UUID rosterId, ClubRosterUpdateRequest request) {
     ClubRoster row = requireRosterInOrganization(organizationId, rosterId);
     permissions.requireRosterManage(organizationId);
+    if (request.status() != null && row.status == ClubRosterStatus.ACTIVE && request.status() != ClubRosterStatus.ACTIVE) {
+      handlePrimaryOrganizationAfterActiveRosterRemoval(row);
+    }
     if (request.status() != null) row.status = request.status();
     if (request.joinedAt() != null) row.joinedAt = request.joinedAt();
     return mapper.clubRoster(row);
@@ -81,13 +84,13 @@ public class ClubRosterServiceImpl implements ClubRosterService {
   public void delete(UUID organizationId, UUID rosterId) {
     ClubRoster row = requireRosterInOrganization(organizationId, rosterId);
     permissions.requireRosterManage(organizationId);
+    if (row.status == ClubRosterStatus.ACTIVE) {
+      handlePrimaryOrganizationAfterActiveRosterRemoval(row);
+    }
     row.softDelete();
   }
 
   public void requireAthleteBelongsToOrganization(UUID organizationId, Athlete athlete) {
-    if (athlete.primaryOrganization != null && athlete.primaryOrganization.id.equals(organizationId)) {
-      return;
-    }
     roster.findByOrganization_IdAndAthlete_IdAndStatusAndDeletedAtIsNull(organizationId, athlete.id, ClubRosterStatus.ACTIVE)
         .orElseThrow(() -> new BusinessConflictException("Athlete is not active in this club roster"));
   }
@@ -102,14 +105,25 @@ public class ClubRosterServiceImpl implements ClubRosterService {
   }
 
   private void validateAthleteCanJoinRoster(Organization organization, Athlete athlete) {
-    if (athlete.primaryOrganization != null && !athlete.primaryOrganization.id.equals(organization.id)) {
-      throw new BusinessConflictException("Athlete primary organization is different from this club");
-    }
     members.findByOrganization_IdAndPerson_IdAndStatusAndDeletedAtIsNull(
         organization.id,
         athlete.person.id,
         ClubMemberStatus.ACTIVE
     ).orElseThrow(() -> new BusinessConflictException("Athlete person must be an ACTIVE club member before joining roster"));
+  }
+
+  private void handlePrimaryOrganizationAfterActiveRosterRemoval(ClubRoster row) {
+    Athlete athlete = row.athlete;
+    if (athlete.primaryOrganization == null || !athlete.primaryOrganization.id.equals(row.organization.id)) {
+      return;
+    }
+    List<ClubRoster> remainingActive = roster.findByAthlete_IdAndStatusAndDeletedAtIsNull(athlete.id, ClubRosterStatus.ACTIVE).stream()
+        .filter(existing -> !existing.id.equals(row.id))
+        .toList();
+    if (!remainingActive.isEmpty()) {
+      throw new BusinessConflictException("Cannot remove the primary club roster while the athlete is still ACTIVE in another club. Reassign the primary club first.");
+    }
+    athlete.primaryOrganization = null;
   }
 
   private Organization requireOrganization(UUID id) {

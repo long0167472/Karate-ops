@@ -9,9 +9,12 @@ import java.util.UUID;
 
 public interface AthleteService {
   List<AthleteResponse> list();
+  List<AthleteResponse> listByOrganization(UUID organizationId);
   AthleteResponse get(UUID id);
   AthleteResponse create(AthleteCreateRequest request);
+  AthleteResponse createInOrganization(UUID organizationId, AthleteCreateRequest request);
   AthleteResponse update(UUID id, AthleteUpdateRequest request);
+  AthleteResponse updateInOrganization(UUID organizationId, UUID id, AthleteUpdateRequest request);
   void delete(UUID id);
   Athlete requireAthlete(UUID id);
 }

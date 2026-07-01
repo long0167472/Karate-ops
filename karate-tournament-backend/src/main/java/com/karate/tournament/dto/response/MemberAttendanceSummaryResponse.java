@@ -9,6 +9,7 @@ public record MemberAttendanceSummaryResponse(
     long absent,
     long excused,
     long pendingLeaveRequests,
-    List<MemberAttendanceSessionResponse> sessionRows
+    List<MemberAttendanceSessionResponse> sessionRows,
+    List<LeaveRequestResponse> leaveRequests
 ) {
 }

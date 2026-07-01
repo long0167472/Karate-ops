@@ -228,6 +228,7 @@ public class TournamentDrawServiceImpl implements TournamentDrawService {
         if (isKumite(match.mode)) {
           KumiteMatchState state = KumiteMatchState.create();
           state.match = match;
+          initializeDuration(category, state);
           kumiteStates.save(state);
         }
         roundMatches.add(match);
@@ -268,6 +269,7 @@ public class TournamentDrawServiceImpl implements TournamentDrawService {
       if (isKumite(match.mode)) {
         KumiteMatchState state = KumiteMatchState.create();
         state.match = match;
+        initializeDuration(category, state);
         kumiteStates.save(state);
       }
       bronzeMatches.add(match);
@@ -321,5 +323,11 @@ public class TournamentDrawServiceImpl implements TournamentDrawService {
 
   private boolean isKumite(CategoryDiscipline discipline) {
     return discipline == CategoryDiscipline.KUMITE || discipline == CategoryDiscipline.TEAM_KUMITE;
+  }
+
+  private void initializeDuration(Category category, KumiteMatchState state) {
+    int durationMs = Math.max(30, category.matchDurationSeconds == null ? 180 : category.matchDurationSeconds) * 1000;
+    state.durationMs = durationMs;
+    state.remainingMs = durationMs;
   }
 }

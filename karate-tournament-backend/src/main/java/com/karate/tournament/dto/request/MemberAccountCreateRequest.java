@@ -2,11 +2,9 @@ package com.karate.tournament.dto.request;
 
 import com.karate.tournament.entity.enums.ClubMemberRole;
 import com.karate.tournament.entity.enums.ClubMemberStatus;
-import com.karate.tournament.entity.enums.PaymentStatus;
 import com.karate.tournament.entity.enums.PersonGender;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public record MemberAccountCreateRequest(
@@ -22,10 +20,6 @@ public record MemberAccountCreateRequest(
     ClubMemberStatus status,
     Boolean student,
     Boolean attendanceViewEnabled,
-    PaymentStatus tuitionStatus,
-    BigDecimal tuitionPaidAmount,
-    PaymentStatus otherFeeStatus,
-    BigDecimal otherFeePaidAmount,
     String paymentNote,
     String memberNote
 ) {

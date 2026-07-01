@@ -3,7 +3,7 @@ name: club-api
 description: Complete endpoint reference for club management — organizations, members, roster, attendance, fees, finance
 type: api
 version: "1.0"
-last_updated: "2026-06-11"
+last_updated: "2026-06-30"
 metadata:
   owner: backend
   base_path: /api
@@ -23,6 +23,28 @@ related_context_files:
 ---
 
 # API Reference: Club Management
+
+## 2026-06-30 Updates
+
+These notes supersede any older conflicting text below.
+
+- Global list endpoints are now admin-only:
+  - `GET /api/organizations`
+  - `GET /api/persons`
+  - `GET /api/athletes`
+- New club-management directory endpoint:
+  - `GET /api/organizations/managed-clubs`
+- `GET /api/me/attendance` now returns both `sessionRows` and `leaveRequests` for member self-service.
+- New org-scoped identity/athlete endpoints:
+  - `GET /api/organizations/{orgId}/athletes`
+  - `POST /api/organizations/{orgId}/athletes`
+  - `PATCH /api/organizations/{orgId}/athletes/{athleteId}`
+  - `PATCH /api/organizations/{orgId}/persons/{personId}`
+- Club member write DTOs no longer accept finance summary fields (`tuitionStatus`, `tuitionPaidAmount`, `otherFeeStatus`, `otherFeePaidAmount`).
+- Leave-request manager APIs are now canonicalized to:
+  - `GET /api/organizations/{orgId}/attendance-leave-requests`
+  - `PATCH /api/attendance-leave-requests/{requestId}/decision`
+- `/api/me/attendance/leave-requests` now accepts the discriminated leave-request body with `requestType`.
 
 All responses wrapped in `ApiResponse<T>`. Auth: `Authorization: Bearer <jwt>` required on all endpoints unless noted.
 

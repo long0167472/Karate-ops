@@ -35,6 +35,8 @@ public class TatamiServiceImpl implements TatamiService {
       MatchStatus.PAUSED,
       MatchStatus.REVIEW,
       MatchStatus.HANTEI,
+      MatchStatus.HIKIWAKE,
+      MatchStatus.RESULT_PENDING_CONFIRMATION,
       MatchStatus.VOTING
   ));
 
@@ -87,7 +89,7 @@ public class TatamiServiceImpl implements TatamiService {
   public MatchResponse currentMatch(UUID tatamiId) {
     Tatami tatami = requireTatami(tatamiId);
     permissions.requireViewTournament(tatami.tournament);
-    if (tatami.currentMatch != null && tatami.currentMatch.deletedAt == null) {
+    if (tatami.currentMatch != null && tatami.currentMatch.deletedAt == null && LIVE_STATUSES.contains(tatami.currentMatch.status)) {
       return mapper.match(tatami.currentMatch);
     }
     return matches.findByTatami_IdAndDeletedAtIsNullAndStatusInOrderByScheduledAtAscMatchNumberAsc(tatamiId, LIVE_STATUSES)

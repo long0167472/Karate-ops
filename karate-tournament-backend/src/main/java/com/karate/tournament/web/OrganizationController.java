@@ -4,6 +4,7 @@ package com.karate.tournament.web;
 import lombok.RequiredArgsConstructor;
 import com.karate.tournament.service.OrganizationService;
 import com.karate.tournament.dto.request.OrganizationCreateRequest;
+import com.karate.tournament.dto.response.ManagedClubResponse;
 import com.karate.tournament.dto.response.OrganizationResponse;
 import com.karate.tournament.dto.request.OrganizationUpdateRequest;
 import jakarta.validation.Valid;
@@ -29,6 +30,11 @@ public class OrganizationController {
   @GetMapping
   public List<OrganizationResponse> list() {
     return organizations.list();
+  }
+
+  @GetMapping("/managed-clubs")
+  public List<ManagedClubResponse> managedClubs() {
+    return organizations.managedClubs();
   }
 
   @GetMapping("/{id}")

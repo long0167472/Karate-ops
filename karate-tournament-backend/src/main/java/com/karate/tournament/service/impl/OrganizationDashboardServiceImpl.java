@@ -29,8 +29,11 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,20 +53,13 @@ public class OrganizationDashboardServiceImpl implements OrganizationDashboardSe
   public OrganizationDashboardOverviewResponse overview(UUID organizationId) {
     Organization organization = requireOrganization(organizationId);
     permissions.requireClubView(organization.id);
-    List<AttendanceSession> sessionList = sessions.findByOrganization_IdAndDeletedAtIsNullOrderByScheduledAtDescCreatedAtDesc(organizationId);
-    AttendanceCounts counts = attendanceCounts(sessionList);
-    return new OrganizationDashboardOverviewResponse(
-        organization.id,
-        organization.name,
-        members.countByOrganization_IdAndStatusAndDeletedAtIsNull(organization.id, ClubMemberStatus.ACTIVE),
-        roster.findByOrganization_IdAndDeletedAtIsNullOrderByCreatedAtDesc(organization.id)
-            .stream()
-            .filter(row -> row.status == ClubRosterStatus.ACTIVE)
-            .count(),
-        sessionList.size(),
-        tournamentEntries(organization.id, null),
-        rate(counts.present() + counts.late(), counts.present() + counts.late() + counts.absent())
-    );
+    return buildOverviewMap(List.of(organization)).get(organization.id);
+  }
+
+  @Transactional(readOnly = true)
+  public Map<UUID, OrganizationDashboardOverviewResponse> overviews(List<Organization> organizationsList) {
+    organizationsList.forEach(organization -> permissions.requireClubView(organization.id));
+    return buildOverviewMap(organizationsList);
   }
 
   @Transactional(readOnly = true)
@@ -72,11 +68,13 @@ public class OrganizationDashboardServiceImpl implements OrganizationDashboardSe
     permissions.requireClubView(organization.id);
     LocalDate safeTo = to == null ? LocalDate.now(ZoneOffset.UTC) : to;
     LocalDate safeFrom = from == null ? safeTo.withDayOfMonth(1) : from;
-    List<AttendanceSession> sessionList = sessions.findByOrganization_IdAndDeletedAtIsNullOrderByScheduledAtDescCreatedAtDesc(organizationId)
-        .stream()
-        .filter(session -> inRange(session, safeFrom, safeTo))
-        .toList();
-    AttendanceCounts counts = attendanceCounts(sessionList);
+    List<AttendanceSession> sessionList = sessions.findByOrganization_IdAndScheduledDateBetweenAndDeletedAtIsNullOrderByScheduledAtAscCreatedAtAsc(
+        organizationId,
+        safeFrom,
+        safeTo
+    );
+    List<AttendanceRecord> sessionRecords = recordsForSessions(sessionList);
+    AttendanceCounts counts = countRecords(sessionRecords);
     return new OrganizationAttendanceDashboardResponse(
         organization.id,
         safeFrom,
@@ -88,7 +86,7 @@ public class OrganizationDashboardServiceImpl implements OrganizationDashboardSe
         counts.late(),
         counts.excused(),
         rate(counts.present() + counts.late(), counts.present() + counts.late() + counts.absent()),
-        lowAttendanceRows(organization.id, sessionList)
+        lowAttendanceRows(organization.id, sessionList, sessionRecords)
     );
   }
 
@@ -101,7 +99,9 @@ public class OrganizationDashboardServiceImpl implements OrganizationDashboardSe
     roster.findByOrganization_IdAndAthlete_IdAndDeletedAtIsNull(organization.id, athlete.id)
         .orElseThrow(() -> new ResourceNotFoundException("Athlete is not in this organization roster"));
     List<AttendanceSession> sessionList = sessions.findByOrganization_IdAndDeletedAtIsNullOrderByScheduledAtDescCreatedAtDesc(organization.id);
-    List<AttendanceRecord> athleteRecords = recordsForAthlete(sessionList, athlete.id);
+    List<AttendanceRecord> athleteRecords = recordsForSessions(sessionList).stream()
+        .filter(record -> record.athlete != null && record.athlete.id.equals(athlete.id))
+        .toList();
     AttendanceCounts counts = countRecords(athleteRecords);
     return new OrganizationAthleteDashboardResponse(
         organization.id,
@@ -118,37 +118,40 @@ public class OrganizationDashboardServiceImpl implements OrganizationDashboardSe
     );
   }
 
-  private List<LowAttendanceAthleteRow> lowAttendanceRows(UUID organizationId, List<AttendanceSession> sessionList) {
+  private List<LowAttendanceAthleteRow> lowAttendanceRows(UUID organizationId, List<AttendanceSession> sessionList, List<AttendanceRecord> sessionRecords) {
+    var recordsByAthlete = sessionRecords.stream()
+        .filter(record -> record.athlete != null)
+        .collect(java.util.stream.Collectors.groupingBy(record -> record.athlete.id));
     return roster.findByOrganization_IdAndDeletedAtIsNullOrderByCreatedAtDesc(organizationId)
         .stream()
         .filter(row -> row.status == ClubRosterStatus.ACTIVE)
-        .map(row -> lowAttendanceRow(row, sessionList))
+        .map(row -> lowAttendanceRow(row, sessionList.size(), recordsByAthlete.getOrDefault(row.athlete.id, List.of())))
         .sorted(Comparator.comparingDouble(LowAttendanceAthleteRow::attendanceRate)
             .thenComparing(LowAttendanceAthleteRow::athleteName))
         .limit(10)
         .toList();
   }
 
-  private LowAttendanceAthleteRow lowAttendanceRow(ClubRoster row, List<AttendanceSession> sessionList) {
-    List<AttendanceRecord> athleteRecords = recordsForAthlete(sessionList, row.athlete.id);
+  private LowAttendanceAthleteRow lowAttendanceRow(ClubRoster row, int sessionCount, List<AttendanceRecord> athleteRecords) {
     AttendanceCounts counts = countRecords(athleteRecords);
     long presentOrLate = counts.present() + counts.late();
     long denominator = presentOrLate + counts.absent();
     return new LowAttendanceAthleteRow(
         row.athlete.id,
         row.athlete.person.displayName,
-        sessionList.size(),
+        sessionCount,
         presentOrLate,
         rate(presentOrLate, denominator)
     );
   }
 
-  private AttendanceCounts attendanceCounts(List<AttendanceSession> sessionList) {
-    List<AttendanceRecord> all = new ArrayList<>();
-    for (AttendanceSession session : sessionList) {
-      all.addAll(records.findBySession_IdAndDeletedAtIsNullOrderByCreatedAtAsc(session.id));
+  private List<AttendanceRecord> recordsForSessions(List<AttendanceSession> sessionList) {
+    if (sessionList.isEmpty()) {
+      return List.of();
     }
-    return countRecords(all);
+    return records.findBySession_IdInAndDeletedAtIsNullOrderByCreatedAtAsc(
+        sessionList.stream().map(session -> session.id).toList()
+    );
   }
 
   private AttendanceCounts countRecords(List<AttendanceRecord> recordList) {
@@ -163,14 +166,6 @@ public class OrganizationDashboardServiceImpl implements OrganizationDashboardSe
       if (record.status == AttendanceRecordStatus.EXCUSED) excused += 1;
     }
     return new AttendanceCounts(recordList.size(), present, absent, late, excused);
-  }
-
-  private List<AttendanceRecord> recordsForAthlete(List<AttendanceSession> sessionList, UUID athleteId) {
-    List<AttendanceRecord> out = new ArrayList<>();
-    for (AttendanceSession session : sessionList) {
-      records.findBySession_IdAndAthlete_IdAndDeletedAtIsNull(session.id, athleteId).ifPresent(out::add);
-    }
-    return out;
   }
 
   private boolean inRange(AttendanceSession session, LocalDate from, LocalDate to) {
@@ -205,5 +200,82 @@ public class OrganizationDashboardServiceImpl implements OrganizationDashboardSe
   }
 
   private record AttendanceCounts(long total, long present, long absent, long late, long excused) {
+  }
+
+  private Map<UUID, OrganizationDashboardOverviewResponse> buildOverviewMap(List<Organization> organizationsList) {
+    if (organizationsList.isEmpty()) {
+      return Map.of();
+    }
+    List<UUID> organizationIds = organizationsList.stream().map(organization -> organization.id).toList();
+    Map<UUID, Long> activeMembersByOrg = countMap(
+        members.countByOrganizationIdsAndStatus(organizationIds, ClubMemberStatus.ACTIVE),
+        OrganizationMemberRepository.OrganizationCountProjection::getOrganizationId,
+        OrganizationMemberRepository.OrganizationCountProjection::getTotal
+    );
+    Map<UUID, Long> activeAthletesByOrg = countMap(
+        roster.countByOrganizationIdsAndStatus(organizationIds, ClubRosterStatus.ACTIVE),
+        ClubRosterRepository.OrganizationCountProjection::getOrganizationId,
+        ClubRosterRepository.OrganizationCountProjection::getTotal
+    );
+    Map<UUID, Long> sessionsByOrg = countMap(
+        sessions.countByOrganizationIds(organizationIds),
+        AttendanceSessionRepository.OrganizationCountProjection::getOrganizationId,
+        AttendanceSessionRepository.OrganizationCountProjection::getTotal
+    );
+    Map<UUID, Long> entriesByOrg = countMap(
+        entries.countTournamentEntriesByOrganizationIds(organizationIds),
+        EntryRepository.OrganizationCountProjection::getOrganizationId,
+        EntryRepository.OrganizationCountProjection::getTotal
+    );
+    Map<UUID, AttendanceRateSnapshot> ratesByOrg = attendanceRateMap(organizationIds);
+
+    Map<UUID, OrganizationDashboardOverviewResponse> results = new LinkedHashMap<>();
+    for (Organization organization : organizationsList) {
+      AttendanceRateSnapshot rateSnapshot = ratesByOrg.getOrDefault(organization.id, AttendanceRateSnapshot.ZERO);
+      results.put(
+          organization.id,
+          new OrganizationDashboardOverviewResponse(
+              organization.id,
+              organization.name,
+              activeMembersByOrg.getOrDefault(organization.id, 0L),
+              activeAthletesByOrg.getOrDefault(organization.id, 0L),
+              sessionsByOrg.getOrDefault(organization.id, 0L),
+              entriesByOrg.getOrDefault(organization.id, 0L),
+              rate(rateSnapshot.presentOrLate(), rateSnapshot.presentOrLate() + rateSnapshot.absent())
+          )
+      );
+    }
+    return results;
+  }
+
+  private <T> Map<UUID, Long> countMap(List<T> rows, Function<T, UUID> organizationId, Function<T, Long> total) {
+    Map<UUID, Long> counts = new LinkedHashMap<>();
+    for (T row : rows) {
+      Long value = total.apply(row);
+      counts.put(organizationId.apply(row), value == null ? 0L : value);
+    }
+    return counts;
+  }
+
+  private Map<UUID, AttendanceRateSnapshot> attendanceRateMap(List<UUID> organizationIds) {
+    Map<UUID, AttendanceRateSnapshot> rates = new LinkedHashMap<>();
+    for (AttendanceRecordRepository.AttendanceRateProjection row : records.summarizeAttendanceByOrganizationIds(
+        organizationIds,
+        List.of(AttendanceRecordStatus.PRESENT, AttendanceRecordStatus.LATE),
+        AttendanceRecordStatus.ABSENT
+    )) {
+      rates.put(
+          row.getOrganizationId(),
+          new AttendanceRateSnapshot(
+              row.getPresentOrLate() == null ? 0L : row.getPresentOrLate(),
+              row.getAbsent() == null ? 0L : row.getAbsent()
+          )
+      );
+    }
+    return rates;
+  }
+
+  private record AttendanceRateSnapshot(long presentOrLate, long absent) {
+    private static final AttendanceRateSnapshot ZERO = new AttendanceRateSnapshot(0, 0);
   }
 }

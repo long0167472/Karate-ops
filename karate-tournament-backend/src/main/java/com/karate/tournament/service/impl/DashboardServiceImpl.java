@@ -82,7 +82,7 @@ public class DashboardServiceImpl implements DashboardService {
     return tatamis.dashboardRows(
             tournamentId,
             MatchStatus.SCHEDULED,
-            List.of(MatchStatus.READY, MatchStatus.RUNNING, MatchStatus.PAUSED, MatchStatus.REVIEW, MatchStatus.HANTEI, MatchStatus.VOTING),
+            List.of(MatchStatus.READY, MatchStatus.RUNNING, MatchStatus.PAUSED, MatchStatus.REVIEW, MatchStatus.HANTEI, MatchStatus.RESULT_PENDING_CONFIRMATION, MatchStatus.VOTING),
             List.of(MatchStatus.COMPLETED, MatchStatus.LOCKED)
         )
         .stream()

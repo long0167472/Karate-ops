@@ -41,7 +41,7 @@ export function AuthenticatedHomePage({
       }
 
       const [{ clubs: nextClubs, dashboards: nextDashboards }, tournamentRes] = await Promise.all([
-        fetchClubDirectory(hasRole(user, "GLOBAL_ADMIN"), user.primaryOrganizationId),
+        fetchClubDirectory(),
         apiGet<PublicTournamentSummary[] | { items: PublicTournamentSummary[]; total: number }>(
           "/api/public/tournaments?phase=UPCOMING&limit=6&offset=0"
         )

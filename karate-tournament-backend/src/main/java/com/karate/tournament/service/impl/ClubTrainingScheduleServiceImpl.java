@@ -40,6 +40,7 @@ public class ClubTrainingScheduleServiceImpl implements ClubTrainingScheduleServ
   private final AttendanceSessionRepository sessions;
   private final AttendanceRecordRepository records;
   private final OrganizationRepository organizations;
+  private final AttendanceLeaveRequestService leaveRequests;
   private final PermissionService permissions;
 
   @Transactional(readOnly = true)
@@ -120,7 +121,8 @@ public class ClubTrainingScheduleServiceImpl implements ClubTrainingScheduleServ
     session.scheduledDate = date;
     session.scheduledAt = ZonedDateTime.of(date, schedule.startTime, zone(schedule.timezone)).toInstant();
     session.notes = "CLB đánh dấu nghỉ tập ngày này.";
-    sessions.save(session);
+    AttendanceSession saved = sessions.save(session);
+    leaveRequests.materializeApprovedLeavesForSession(saved);
     return 1;
   }
 
@@ -164,7 +166,8 @@ public class ClubTrainingScheduleServiceImpl implements ClubTrainingScheduleServ
     session.scheduledDate = date;
     session.scheduledAt = ZonedDateTime.of(date, schedule.startTime, zone(schedule.timezone)).toInstant();
     session.notes = "Tự tạo từ lịch tập cố định.";
-    sessions.save(session);
+    AttendanceSession saved = sessions.save(session);
+    leaveRequests.materializeApprovedLeavesForSession(saved);
     return 1;
   }
 
