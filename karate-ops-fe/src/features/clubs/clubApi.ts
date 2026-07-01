@@ -3,6 +3,9 @@ import type {
   AthleteResponse,
   AttendanceRecordResponse,
   AttendanceSessionResponse,
+  BeltExamCandidateResponse,
+  BeltExamCriterionResponse,
+  BeltExamResponse,
   ClubFeeOverviewResponse,
   ClubMemberResponse,
   ClubRosterResponse,
@@ -12,7 +15,7 @@ import type {
   OrganizationDashboardOverviewResponse,
   OrganizationResponse
 } from "../../types";
-import { apiGet, apiPatch, apiPost } from "../../apiClient";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "../../apiClient";
 
 export interface ClubDirectoryData {
   clubs: OrganizationResponse[];
@@ -29,6 +32,7 @@ export interface ClubWorkspaceData {
   schedule: ClubTrainingScheduleResponse;
   athletes: AthleteResponse[];
   finance: ClubFeeOverviewResponse;
+  beltExams: BeltExamResponse[];
 }
 
 export async function fetchClubDirectory(): Promise<ClubDirectoryData> {
@@ -39,7 +43,7 @@ export async function fetchClubDirectory(): Promise<ClubDirectoryData> {
 }
 
 export async function fetchClubWorkspace(id: string): Promise<ClubWorkspaceData> {
-  const [overview, attendance, accountRequests, members, roster, sessions, schedule, athletes, finance] = await Promise.all([
+  const [overview, attendance, accountRequests, members, roster, sessions, schedule, athletes, finance, beltExams] = await Promise.all([
     apiGet<OrganizationDashboardOverviewResponse>(`/api/dashboard/organizations/${id}/overview`),
     apiGet<OrganizationAttendanceDashboardResponse>(`/api/dashboard/organizations/${id}/attendance`),
     apiGet<AccountRequestResponse[]>(`/api/organizations/${id}/account-requests`),
@@ -48,7 +52,8 @@ export async function fetchClubWorkspace(id: string): Promise<ClubWorkspaceData>
     apiGet<AttendanceSessionResponse[]>(`/api/organizations/${id}/attendance-sessions`),
     apiGet<ClubTrainingScheduleResponse>(`/api/organizations/${id}/training-schedule`),
     apiGet<AthleteResponse[]>(`/api/organizations/${id}/athletes`),
-    apiGet<ClubFeeOverviewResponse>(`/api/organizations/${id}/finance/overview`)
+    apiGet<ClubFeeOverviewResponse>(`/api/organizations/${id}/finance/overview`),
+    apiGet<BeltExamResponse[]>(`/api/organizations/${id}/belt-exams`)
   ]);
   return {
     overview,
@@ -59,8 +64,53 @@ export async function fetchClubWorkspace(id: string): Promise<ClubWorkspaceData>
     sessions,
     schedule,
     athletes,
-    finance
+    finance,
+    beltExams
   };
+}
+
+export async function createBeltExam(orgId: string, body: { name: string; status?: string; examDate?: string; location?: string; examinerName?: string; passThreshold?: number; notes?: string }) {
+  return apiPost<BeltExamResponse>(`/api/organizations/${orgId}/belt-exams`, body);
+}
+
+export async function updateBeltExam(examId: string, body: Partial<{ name: string; status: string; examDate: string; location: string; examinerName: string; passThreshold: number; notes: string }>) {
+  return apiPatch<BeltExamResponse>(`/api/belt-exams/${examId}`, body);
+}
+
+export async function deleteBeltExam(examId: string) {
+  return apiDelete(`/api/belt-exams/${examId}`);
+}
+
+export async function addBeltExamCandidate(examId: string, body: { athleteId?: string; organizationMemberId?: string; currentBelt?: string; targetBelt: string }) {
+  return apiPost<BeltExamCandidateResponse>(`/api/belt-exams/${examId}/candidates`, body);
+}
+
+export async function updateBeltExamCandidate(examId: string, candidateId: string, body: { result?: string; examinerNote?: string }) {
+  return apiPatch<BeltExamCandidateResponse>(`/api/belt-exams/${examId}/candidates/${candidateId}`, body);
+}
+
+export async function removeBeltExamCandidate(examId: string, candidateId: string) {
+  return apiDelete(`/api/belt-exams/${examId}/candidates/${candidateId}`);
+}
+
+export async function applyBeltExamResults(examId: string) {
+  return apiPost<BeltExamResponse>(`/api/belt-exams/${examId}/apply-results`, {});
+}
+
+export async function addBeltExamCriterion(examId: string, body: { name: string; description?: string; maxScore?: number; weight?: number; displayOrder?: number }) {
+  return apiPost<BeltExamCriterionResponse>(`/api/belt-exams/${examId}/criteria`, body);
+}
+
+export async function updateBeltExamCriterion(examId: string, criterionId: string, body: { name: string; description?: string; maxScore?: number; weight?: number; displayOrder?: number }) {
+  return apiPatch<BeltExamCriterionResponse>(`/api/belt-exams/${examId}/criteria/${criterionId}`, body);
+}
+
+export async function removeBeltExamCriterion(examId: string, criterionId: string) {
+  return apiDelete(`/api/belt-exams/${examId}/criteria/${criterionId}`);
+}
+
+export async function scoreBeltExamCandidate(examId: string, candidateId: string, criterionId: string, body: { score: number; note?: string }) {
+  return apiPut<BeltExamCandidateResponse>(`/api/belt-exams/${examId}/candidates/${candidateId}/scores/${criterionId}`, body);
 }
 
 export async function saveAttendanceRecord(sessionId: string, athleteId: string, record: AttendanceRecordResponse | undefined, status: string) {

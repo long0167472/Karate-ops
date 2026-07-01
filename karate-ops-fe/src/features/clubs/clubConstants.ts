@@ -1,5 +1,5 @@
-export type ClubTab = "overview" | "members" | "fees" | "roster" | "attendance" | "announcements" | "requests";
-export type ClubDrawer = "club" | "member" | "roster" | "session" | "schedule" | "announcement" | null;
+export type ClubTab = "overview" | "members" | "fees" | "roster" | "attendance" | "announcements" | "requests" | "exams";
+export type ClubDrawer = "club" | "member" | "roster" | "session" | "schedule" | "announcement" | "exam" | null;
 
 export const CLUB_TABS: Array<{ id: ClubTab; label: string; hint: string }> = [
   { id: "overview", label: "Tổng quan", hint: "Sức khỏe CLB" },
@@ -8,14 +8,16 @@ export const CLUB_TABS: Array<{ id: ClubTab; label: string; hint: string }> = [
   { id: "roster", label: "VĐV", hint: "Hồ sơ thi đấu" },
   { id: "fees", label: "Tài chính", hint: "Học phí và thu chi" },
   { id: "announcements", label: "Thông báo", hint: "Tin gửi tới thành viên" },
-  { id: "requests", label: "Yêu cầu", hint: "Xin nghỉ và tham gia giải" }
+  { id: "requests", label: "Yêu cầu", hint: "Xin nghỉ và tham gia giải" },
+  { id: "exams", label: "Thi lên đai", hint: "Kỳ thi thăng cấp" }
 ];
 
 export const CLUB_TAB_GROUPS: Array<{ label: string; tabs: ClubTab[] }> = [
   { label: "Vận hành", tabs: ["overview", "attendance"] },
   { label: "Con người", tabs: ["members", "roster"] },
   { label: "Tài chính", tabs: ["fees"] },
-  { label: "Giao tiếp", tabs: ["announcements", "requests"] }
+  { label: "Giao tiếp", tabs: ["announcements", "requests"] },
+  { label: "Phát triển", tabs: ["exams"] }
 ];
 
 export const MEMBER_ROLES = ["OWNER", "MANAGER", "COACH", "ATHLETE", "PARENT", "STAFF"];
@@ -98,4 +100,40 @@ export const TOURNAMENT_STATUS_LABELS: Record<string, string> = {
   RUNNING: "Đang diễn ra",
   COMPLETED: "Đã kết thúc",
   ARCHIVED: "Lưu trữ"
+};
+
+export const BELT_RANKS = [
+  { value: "WHITE", label: "Trắng" },
+  { value: "ORANGE", label: "Cam" },
+  { value: "BLUE", label: "Xanh dương" },
+  { value: "YELLOW", label: "Vàng" },
+  { value: "GREEN", label: "Xanh lá" },
+  { value: "PURPLE", label: "Tím" },
+  { value: "BROWN_3", label: "Nâu 3" },
+  { value: "BROWN_2", label: "Nâu 2" },
+  { value: "BROWN_1", label: "Nâu 1" },
+  { value: "BLACK_1", label: "Đen 1 Đẳng" },
+  { value: "BLACK_2", label: "Đen 2 Đẳng" },
+  { value: "BLACK_3", label: "Đen 3 Đẳng" },
+  { value: "BLACK_4", label: "Đen 4 Đẳng" },
+  { value: "BLACK_5", label: "Đen 5 Đẳng" }
+] as const;
+
+export const BELT_RANK_LABELS: Record<string, string> = Object.fromEntries(
+  BELT_RANKS.map((rank) => [rank.value, rank.label])
+);
+
+export const EXAM_STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Bản nháp",
+  OPEN: "Đang mở",
+  IN_PROGRESS: "Đang diễn ra",
+  COMPLETED: "Đã hoàn thành",
+  CANCELLED: "Đã hủy"
+};
+
+export const EXAM_RESULT_LABELS: Record<string, string> = {
+  PENDING: "Chờ kết quả",
+  PASS: "Đạt",
+  FAIL: "Không đạt",
+  ABSENT: "Vắng mặt"
 };

@@ -906,3 +906,56 @@ export interface TournamentExtended {
   tatamiCount: number;
   ownerOrganization: { id: string; name: string } | null;
 }
+
+export type BeltExamStatus = "DRAFT" | "OPEN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type BeltExamResult = "PENDING" | "PASS" | "FAIL" | "ABSENT";
+
+export interface BeltExamCriterionResponse {
+  id: string;
+  examId: string;
+  name: string;
+  description?: string;
+  maxScore: number;
+  weight: number;
+  displayOrder: number;
+}
+
+export interface BeltExamScoreResponse {
+  id: string;
+  candidateId: string;
+  criterionId: string;
+  score: number;
+  note?: string;
+}
+
+export interface BeltExamCandidateResponse {
+  id: string;
+  examId: string;
+  organizationMemberId?: string;
+  athleteId?: string;
+  personId?: string;
+  displayName?: string;
+  currentBelt?: string;
+  targetBelt: string;
+  result: BeltExamResult;
+  examinerNote?: string;
+  beltApplied: boolean;
+  totalScore: number;
+  maxTotalScore: number;
+  scores: BeltExamScoreResponse[];
+}
+
+export interface BeltExamResponse {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  name: string;
+  status: BeltExamStatus;
+  examDate?: string;
+  location?: string;
+  examinerName?: string;
+  passThreshold?: number;
+  notes?: string;
+  criteria: BeltExamCriterionResponse[];
+  candidates: BeltExamCandidateResponse[];
+}
