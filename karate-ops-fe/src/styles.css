@@ -2946,6 +2946,14 @@ svg {
   background: rgba(255, 104, 104, 0.1);
 }
 
+.exchange-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+}
+
 .winner-button {
   width: 100%;
   padding: 10px 12px;
