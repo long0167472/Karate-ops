@@ -1,21 +1,28 @@
-import { motion } from "framer-motion";
-import { X, Calendar } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import type { AttendanceSessionResponse } from "../../../types";
 import { cx } from "../../../utils";
 import { LEAVE_REQUEST_TYPES, LEAVE_REQUEST_TYPE_LABELS } from "../clubConstants";
+
+export interface LeaveRequestSessionOption {
+  id: string;
+  name: string;
+  status: string;
+  scheduledAt?: string;
+  scheduledDate?: string;
+}
+
+export interface LeaveRequestFormData {
+  requestType: "LEAVE_LONG_TERM" | "LEAVE_SESSION" | "LATE";
+  sessionId?: string;
+  fromDate?: string;
+  toDate?: string;
+  reason: string;
+}
 
 interface LeaveRequestFormProps {
   busy: boolean;
   error: string | null;
-  sessions: AttendanceSessionResponse[];
-  onSubmit: (event: FormEvent, data: {
-    requestType: "LEAVE_LONG_TERM" | "LEAVE_SESSION" | "LATE";
-    sessionId?: string;
-    fromDate?: string;
-    toDate?: string;
-    reason: string;
-  }) => void;
+  sessions: LeaveRequestSessionOption[];
+  onSubmit: (data: LeaveRequestFormData) => void | Promise<void>;
 }
 
 export function LeaveRequestForm({
@@ -30,35 +37,38 @@ export function LeaveRequestForm({
   const [toDate, setToDate] = useState("");
   const [reason, setReason] = useState("");
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
+  const needsSession = requestType === "LEAVE_SESSION" || requestType === "LATE";
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
     if (!reason.trim()) {
-      alert("Vui lòng nhập lý do");
+      window.alert("Vui long nhap ly do");
       return;
     }
-
-    if (requestType === "LEAVE_SESSION" && !sessionId) {
-      alert("Vui lòng chọn buổi tập");
+    if (needsSession && !sessionId) {
+      window.alert("Vui long chon buoi tap");
       return;
     }
-
     if (requestType === "LEAVE_LONG_TERM" && (!fromDate || !toDate)) {
-      alert("Vui lòng nhập ngày bắt đầu và kết thúc");
+      window.alert("Vui long nhap ngay bat dau va ket thuc");
       return;
     }
-
-    onSubmit(e, {
+    if (requestType === "LEAVE_LONG_TERM" && toDate < fromDate) {
+      window.alert("Ngay ket thuc phai sau hoac bang ngay bat dau");
+      return;
+    }
+    void onSubmit({
       requestType,
-      sessionId: requestType === "LEAVE_SESSION" ? sessionId : undefined,
+      sessionId: needsSession ? sessionId : undefined,
       fromDate: requestType === "LEAVE_LONG_TERM" ? fromDate : undefined,
       toDate: requestType === "LEAVE_LONG_TERM" ? toDate : undefined,
-      reason
+      reason: reason.trim()
     });
   };
 
   return (
     <form className="club-drawer-form" onSubmit={handleSubmit}>
-      <div className="club-form-section-title">Loại yêu cầu</div>
+      <div className="club-form-section-title">Loai yeu cau</div>
       <div className="club-leave-request-type-selector">
         {LEAVE_REQUEST_TYPES.map((type) => (
           <label key={type} className={cx("leave-request-type-option", requestType === type && "active")}>
@@ -67,77 +77,82 @@ export function LeaveRequestForm({
               name="requestType"
               value={type}
               checked={requestType === type}
-              onChange={() => setRequestType(type as any)}
+              onChange={() => setRequestType(type)}
             />
             <span>{LEAVE_REQUEST_TYPE_LABELS[type]}</span>
           </label>
         ))}
       </div>
 
-      {requestType === "LEAVE_SESSION" && (
+      {needsSession ? (
         <>
-          <div className="club-form-section-title">Chọn buổi tập</div>
+          <div className="club-form-section-title">Chon buoi tap</div>
           <select
             value={sessionId}
-            onChange={(e) => setSessionId(e.target.value)}
+            onChange={(event) => setSessionId(event.target.value)}
             required
             className="club-form-select"
           >
-            <option value="">-- Chọn buổi tập --</option>
-            {sessions.filter((s) => s.status === "OPEN").map((session) => (
+            <option value="">-- Chon buoi tap --</option>
+            {sessions.filter((session) => session.status === "OPEN").map((session) => (
               <option key={session.id} value={session.id}>
-                {session.name} ({session.scheduledAt?.split("T")[0] || "Chưa có ngày"})
+                {session.name} ({session.scheduledDate || session.scheduledAt?.split("T")[0] || "Chua co ngay"})
               </option>
             ))}
           </select>
         </>
-      )}
+      ) : null}
 
-      {requestType === "LEAVE_LONG_TERM" && (
+      {requestType === "LEAVE_LONG_TERM" ? (
         <div className="club-form-grid">
           <div>
-            <label className="club-form-label">Từ ngày *</label>
+            <label className="club-form-label">Tu ngay *</label>
             <input
               type="date"
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              onChange={(event) => setFromDate(event.target.value)}
               required
               className="club-form-input"
             />
           </div>
           <div>
-            <label className="club-form-label">Đến ngày *</label>
+            <label className="club-form-label">Den ngay *</label>
             <input
               type="date"
               value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              onChange={(event) => setToDate(event.target.value)}
               required
               className="club-form-input"
             />
           </div>
         </div>
-      )}
+      ) : null}
 
-      <div className="club-form-section-title">Lý do</div>
+      <div className="club-form-section-title">Ly do</div>
       <textarea
         value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        placeholder="Nêu lý do chi tiết (bệnh, công việc, sự kiện...)"
+        onChange={(event) => setReason(event.target.value)}
+        placeholder="Neu ly do chi tiet"
         rows={4}
         className="club-form-textarea"
         required
       />
 
       <p className="club-helper-text">
-        Admin CLB sẽ duyệt yêu cầu trong vòng 24h. Nếu quá hạn mà chưa được duyệt, hệ thống sẽ tự động đánh vắng mặt.
+        Admin CLB se duyet yeu cau. Neu qua han ma chua duoc duyet, he thong se tu dong danh vang mat.
       </p>
 
       {error ? <p className="club-form-error">{error}</p> : null}
       <button
         className="club-primary-button"
-        disabled={busy || !reason.trim() || (requestType === "LEAVE_SESSION" && !sessionId) || (requestType === "LEAVE_LONG_TERM" && (!fromDate || !toDate))}
+        disabled={
+          busy
+          || !reason.trim()
+          || (needsSession && !sessionId)
+          || (requestType === "LEAVE_LONG_TERM" && (!fromDate || !toDate || toDate < fromDate))
+        }
       >
-        {busy ? "Đang gửi..." : "Gửi yêu cầu"}
+        {busy ? "Dang gui..." : "Gui yeu cau"}
       </button>
     </form>
   );

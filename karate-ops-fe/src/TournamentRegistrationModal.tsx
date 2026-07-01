@@ -102,6 +102,7 @@ interface AddAthletePopoverProps {
   categoryId: string;
   participantId: string;
   tournamentId: string;
+  organizationId: string;
   alreadyRegistered: string[];
   onAdded: () => void;
   onClose: () => void;
@@ -111,6 +112,7 @@ function AddAthletePopover({
   categoryId,
   participantId,
   tournamentId,
+  organizationId,
   alreadyRegistered,
   onAdded,
   onClose
@@ -124,11 +126,11 @@ function AddAthletePopover({
 
   useEffect(() => {
     setLoading(true);
-    apiGet<AthleteResponse[]>("/api/athletes")
+    apiGet<AthleteResponse[]>(`/api/organizations/${organizationId}/athletes`)
       .then(setAthletes)
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -213,10 +215,11 @@ interface CategoryRowProps {
   entries: RegistrationEntry[];
   participantId: string;
   tournamentId: string;
+  organizationId: string;
   onRefresh: () => void;
 }
 
-function CategoryRow({ category, entries, participantId, tournamentId, onRefresh }: CategoryRowProps) {
+function CategoryRow({ category, entries, participantId, tournamentId, organizationId, onRefresh }: CategoryRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -299,6 +302,7 @@ function CategoryRow({ category, entries, participantId, tournamentId, onRefresh
                     categoryId={category.id}
                     participantId={participantId}
                     tournamentId={tournamentId}
+                    organizationId={organizationId}
                     alreadyRegistered={registeredAthleteIds}
                     onAdded={onRefresh}
                     onClose={() => setAddOpen(false)}
@@ -461,6 +465,7 @@ export function TournamentRegistrationModal({
                               entries={entries}
                               participantId={registration.participantId}
                               tournamentId={tournamentId}
+                              organizationId={registration.organizationId}
                               onRefresh={loadRegistration}
                             />
                           ))}

@@ -1,6 +1,7 @@
 package com.karate.tournament.web;
 
 import com.karate.tournament.auth.PermissionService;
+import com.karate.tournament.dto.response.ExportFileResponse;
 import com.karate.tournament.dto.response.MedalTableRow;
 import com.karate.tournament.entity.Entry;
 import com.karate.tournament.entity.Match;
@@ -12,9 +13,6 @@ import com.karate.tournament.service.TournamentService;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,7 +29,7 @@ public class TournamentExportController {
   private final PermissionService permissions;
 
   @GetMapping("/entries.csv")
-  public ResponseEntity<String> entries(@PathVariable UUID tournamentId) {
+  public ExportFileResponse entries(@PathVariable UUID tournamentId) {
     Tournament tournament = requireTournament(tournamentId);
     List<Entry> rows = entries.findByTournament(tournamentId);
     StringBuilder csv = new StringBuilder("category,delegation,athlete,team,weight_kg,weigh_in_status,status\n");
@@ -48,7 +46,7 @@ public class TournamentExportController {
   }
 
   @GetMapping("/schedule.csv")
-  public ResponseEntity<String> schedule(@PathVariable UUID tournamentId) {
+  public ExportFileResponse schedule(@PathVariable UUID tournamentId) {
     Tournament tournament = requireTournament(tournamentId);
     List<Match> rows = matches.findByTournament_IdAndDeletedAtIsNullOrderByScheduledAtAscMatchNumberAsc(tournamentId);
     StringBuilder csv = new StringBuilder("match_no,tatami,category,round,position,status,mode,scheduled_at\n");
@@ -66,7 +64,7 @@ public class TournamentExportController {
   }
 
   @GetMapping("/medals.csv")
-  public ResponseEntity<String> medals(@PathVariable UUID tournamentId) {
+  public ExportFileResponse medals(@PathVariable UUID tournamentId) {
     Tournament tournament = requireTournament(tournamentId);
     List<MedalTableRow> rows = dashboard.medals(tournamentId);
     StringBuilder csv = new StringBuilder("organization,gold,silver,bronze,total\n");
@@ -86,12 +84,9 @@ public class TournamentExportController {
     return tournament;
   }
 
-  private ResponseEntity<String> csv(Tournament tournament, String name, String content) {
+  private ExportFileResponse csv(Tournament tournament, String name, String content) {
     String filename = slug(tournament.name) + "-" + name + ".csv";
-    return ResponseEntity.ok()
-        .contentType(new MediaType("text", "csv"))
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-        .body(content);
+    return new ExportFileResponse(filename, "text/csv", content);
   }
 
   private String row(String... cells) {

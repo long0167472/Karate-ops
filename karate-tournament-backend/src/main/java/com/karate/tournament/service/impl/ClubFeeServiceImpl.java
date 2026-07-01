@@ -60,6 +60,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -220,12 +221,10 @@ public class ClubFeeServiceImpl implements ClubFeeService {
     ClubFeeItem item = requireFeeItem(organizationId, feeItemId);
     permissions.requireRosterManage(organizationId);
     List<OrganizationMember> targetMembers = targetMembers(organizationId, request);
-    List<MemberFeeAssignment> existing = assignments.findByOrganization_IdAndDeletedAtIsNullOrderByCreatedAtDesc(organizationId);
-    Map<UUID, MemberFeeAssignment> existingByMember = existing.stream()
-        .filter(assignment -> assignment.feeItem.id.equals(item.id))
-        .collect(Collectors.toMap(assignment -> assignment.member.id, Function.identity(), (a, b) -> a));
     for (OrganizationMember member : targetMembers) {
-      if (existingByMember.containsKey(member.id)) continue;
+      if (assignments.findFirstByMember_IdAndFeeItem_IdAndDeletedAtIsNull(member.id, item.id).isPresent()) {
+        continue;
+      }
       ResolvedAmount resolved = resolveAmount(member, item);
       MemberFeeAssignment assignment = MemberFeeAssignment.create();
       assignment.organization = member.organization;
@@ -236,7 +235,11 @@ public class ClubFeeServiceImpl implements ClubFeeService {
       assignment.status = resolved.amount().compareTo(BigDecimal.ZERO) == 0 ? PaymentStatus.WAIVED : PaymentStatus.PENDING;
       assignment.dueDate = request.dueDate() != null ? request.dueDate() : defaultDueDate(item);
       assignment.note = request.note();
-      assignments.save(assignment);
+      try {
+        assignments.saveAndFlush(assignment);
+      } catch (DataIntegrityViolationException ignored) {
+        // Another request applied the same fee item concurrently; treat it as idempotent.
+      }
     }
     return assignments.findByOrganization_IdAndDeletedAtIsNullOrderByCreatedAtDesc(organizationId).stream()
         .filter(assignment -> assignment.feeItem.id.equals(item.id))

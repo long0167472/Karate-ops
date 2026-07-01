@@ -12,6 +12,10 @@ export interface TimerState {
 export interface Penalties {
   chui: number;
   hansokuChui: boolean;
+  penaltyLevel: PenaltyLevel;
+  reasonCode: PenaltyReasonCode | null;
+  category1Level: PenaltyLevel;
+  category2Level: PenaltyLevel;
   hansoku: boolean;
   shikkaku: boolean;
   kiken: boolean;
@@ -37,11 +41,29 @@ export interface KumiteState {
     label: string;
     at: number;
   };
-  suggestion?: null | {
+  decision: null | {
     side: Side | null;
-    reason: string;
+    winType: string | null;
+    reasonCode: string | null;
+    reasonText: string | null;
+    frozen: boolean;
+    confirmable: boolean;
   };
-  vr: Record<Side, { card: boolean; active: boolean; result: "ready" | "active" | "accepted" | "denied" }>;
+  senshuState: {
+    holderSide: Side | null;
+    awardedAt: number | null;
+    revoked: boolean;
+    revokedAt: number | null;
+    revocationReasonCode: string | null;
+  };
+  vr: Record<Side, { card: boolean; active: boolean; result: "ready" | "active" | "accepted" | "denied" | "inconclusive" }>;
+  medical: {
+    injuredSide: Side | null;
+    startedAt: number | null;
+    deadlineAt: number | null;
+    active: boolean;
+    lastOutcome: string | null;
+  };
 }
 
 export interface KataState {
@@ -170,6 +192,70 @@ export interface KumiteStateResponse {
   remainingMs: number;
   timerRunning: boolean;
   timerStartedAt?: string;
+  decision: KumiteDecisionResponse;
+  senshu: KumiteSenshuResponse;
+  penalties: KumitePenaltyStateResponse;
+  videoReview: VideoReviewStateResponse;
+  medical: MedicalStateResponse;
+}
+
+export type PenaltyLevel = "NONE" | "CHUI_1" | "CHUI_2" | "CHUI_3" | "HANSOKU_CHUI" | "HANSOKU";
+export type PenaltyReasonCode =
+  | "JOGAI"
+  | "MUBOBI"
+  | "PASSIVITY"
+  | "AVOIDING_COMBAT"
+  | "EXCESSIVE_CONTACT"
+  | "GRABBING"
+  | "WAKARETE_VIOLATION"
+  | "REFEREE_ORDER_VIOLATION";
+
+export interface KumiteDecisionResponse {
+  winnerSide?: BackendSide;
+  winType?: string;
+  reasonCode?: string;
+  reasonText?: string;
+  frozen: boolean;
+  confirmable: boolean;
+}
+
+export interface KumiteSenshuResponse {
+  holderSide?: BackendSide;
+  awardedAt?: string;
+  revoked: boolean;
+  revokedAt?: string;
+  revocationReasonCode?: string;
+}
+
+export interface SidePenaltyResponse {
+  penaltyLevel?: PenaltyLevel;
+  reasonCode?: PenaltyReasonCode;
+  category1Level: PenaltyLevel;
+  category2Level: PenaltyLevel;
+  hansoku: boolean;
+  shikkaku: boolean;
+  kiken: boolean;
+}
+
+export interface KumitePenaltyStateResponse {
+  aka: SidePenaltyResponse;
+  ao: SidePenaltyResponse;
+}
+
+export interface VideoReviewStateResponse {
+  activeRequestSide?: BackendSide;
+  status: "IDLE" | "REQUESTED";
+  akaCardAvailable: boolean;
+  aoCardAvailable: boolean;
+  lastResolution?: "AWARD_SCORE" | "TORIMASEN" | "REVOKE_SENSHU" | "MIENAI" | "TECHNICAL_PROBLEM" | "DENIED";
+}
+
+export interface MedicalStateResponse {
+  injuredSide?: BackendSide;
+  startedAt?: string;
+  deadlineAt?: string;
+  status: "IDLE" | "ACTIVE";
+  lastOutcome?: "FIT_TO_CONTINUE" | "UNFIT_TEN_SECOND_RULE" | "CANCELLED";
 }
 
 export interface KataVoteResponse {
@@ -186,6 +272,7 @@ export interface MatchEventResponse {
   penaltyCode?: string;
   judgeNumber?: number;
   voteSide?: BackendSide;
+  payloadJson?: string;
   occurredAt: string;
 }
 
@@ -411,10 +498,15 @@ export interface MemberAccountCreateResponse {
   temporaryPassword?: string;
 }
 
+export interface ManagedClubResponse {
+  club: OrganizationResponse;
+  overview: OrganizationDashboardOverviewResponse;
+}
+
 export interface LeaveRequestResponse {
   id: string;
-  sessionId: string;
-  sessionName: string;
+  sessionId?: string;
+  sessionName?: string;
   organizationId: string;
   organizationName: string;
   memberId: string;
@@ -464,6 +556,7 @@ export interface MemberAttendanceSummaryResponse {
   excused: number;
   pendingLeaveRequests: number;
   sessionRows: MemberAttendanceSessionResponse[];
+  leaveRequests: LeaveRequestResponse[];
 }
 
 export interface AuthResponse {

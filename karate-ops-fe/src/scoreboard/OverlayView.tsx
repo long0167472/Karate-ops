@@ -19,6 +19,9 @@ export function OverlayView({ payload }: OverlayViewProps) {
 
   const aka = match.competitors.aka;
   const ao = match.competitors.ao;
+  const detail = match.kumite.medical.active
+    ? "MEDICAL"
+    : match.kumite.decision?.reasonText || match.kumite.decision?.winType || null;
 
   return (
     <main className={C.overlayPage}>
@@ -41,6 +44,7 @@ export function OverlayView({ payload }: OverlayViewProps) {
           <div className={C.overlayMeta}>
             {match.tatami} / {match.category}
           </div>
+          {detail ? <div className={C.overlayMeta}>{detail}</div> : null}
         </div>
 
         <div className={`${C.overlaySide} ao`}>

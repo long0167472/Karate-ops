@@ -137,6 +137,18 @@ async function sendBackendAction(currentMatch: MatchResponse, action: Scoreboard
         side: toBackendSide(payload.side),
         points: payload.points
       });
+    case "SCORE_EXCHANGE": {
+      const exchangeId = String(payload.exchangeId || `exchange-${Date.now()}`);
+      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
+        type: "SCORE_EXCHANGE",
+        exchangeId,
+        payloadJson: JSON.stringify({
+          exchangeId,
+          akaPoints: Number(payload.akaPoints || 0),
+          aoPoints: Number(payload.aoPoints || 0)
+        })
+      });
+    }
     case "TIMER_START":
     case "TIMER_STOP":
       return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, { type: action.type });
@@ -157,29 +169,58 @@ async function sendBackendAction(currentMatch: MatchResponse, action: Scoreboard
         type: "TIMER_SET",
         timerMs: currentMatch.kumite?.durationMs ?? 180000
       });
-    case "SET_SENSHU":
+    case "PENALTY_LEVEL":
       return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
-        type: "SENSHU",
+        type: "PENALTY",
+        side: toBackendSide(payload.side),
+        penaltyLevel: payload.level,
+        penaltyReasonCode: payload.reasonCode
+      });
+    case "DIRECT_PENALTY":
+      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
+        type: "PENALTY",
+        side: toBackendSide(payload.side),
+        penaltyCode: payload.reasonCode
+      });
+    case "SENSHU_REVOKE":
+      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
+        type: "SENSHU_REVOKE",
+        side: payload.side ? toBackendSide(payload.side) : undefined,
+        penaltyReasonCode: payload.reasonCode
+      });
+    case "HANTEI_DECISION":
+      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
+        type: "HANTEI_DECISION",
         side: toBackendSide(payload.side)
       });
-    case "SET_CHUI":
-      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
-        type: "PENALTY",
-        side: toBackendSide(payload.side),
-        penaltyCode: "CHUI",
-        points: payload.value
-      });
-    case "TOGGLE_PENALTY":
-      if (payload.value === false) throw new Error("Backend does not support clearing penalties yet");
-      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
-        type: "PENALTY",
-        side: toBackendSide(payload.side),
-        penaltyCode: penaltyCode(String(payload.penalty || ""))
-      });
-    case "SET_HANTEI":
+    case "RESUME_REVIEW":
       return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
         type: "STATUS_CHANGE",
-        status: payload.value ? "HANTEI" : "PAUSED"
+        status: "REVIEW"
+      });
+    case "VR_REQUEST":
+      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
+        type: "VIDEO_REVIEW_REQUEST",
+        side: toBackendSide(payload.side)
+      });
+    case "VR_RESOLVE":
+      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
+        type: "VIDEO_REVIEW_RESOLVE",
+        resolution: payload.resolution,
+        resolutionSide: payload.side ? toBackendSide(payload.side) : undefined,
+        resolutionPoints: payload.points,
+        reasonCode: payload.reasonCode,
+        reasonText: payload.reasonText
+      });
+    case "MEDICAL_START":
+      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
+        type: "MEDICAL_START",
+        side: toBackendSide(payload.side)
+      });
+    case "MEDICAL_RESOLVE":
+      return apiPost<MatchResponse>(`/api/matches/${matchId}/events`, {
+        type: "MEDICAL_RESOLVE",
+        medicalOutcome: payload.outcome
       });
     case "KATA_VOTE":
       if (payload.side === "clear") throw new Error("Backend does not support clearing Kata votes yet");
@@ -188,12 +229,18 @@ async function sendBackendAction(currentMatch: MatchResponse, action: Scoreboard
         judgeNumber: payload.judge,
         voteSide: toBackendSide(payload.side)
       });
+    case "DRAW_CONFIRM":
+      return apiPost<MatchResponse>(`/api/matches/${matchId}/result`, {
+        winnerSide: null,
+        winType: "HIKIWAKE",
+        reason: String(payload.reason || "HIKIWAKE")
+      });
     case "WINNER_CONFIRM":
     case "KATA_CONFIRM_WINNER":
       return apiPost<MatchResponse>(`/api/matches/${matchId}/result`, {
         winnerSide: toBackendSide(payload.side),
         winType: winType(String(payload.winType || (action.type === "KATA_CONFIRM_WINNER" ? "KATA_VOTES" : "MANUAL"))),
-        reason: String(payload.winType || action.type)
+        reason: String(payload.reason || payload.winType || action.type)
       });
     default:
       throw new Error(`${action.type} is not supported by the Spring backend yet`);
@@ -225,6 +272,20 @@ function toMatchState(match: MatchResponse): MatchState {
   const kataVotes = Object.fromEntries(match.kataVotes.map((vote) => [String(vote.judgeNumber), toUiSide(vote.side)]));
   const judgeCount = match.kataVotes.length > 5 ? 7 : 5;
   const result = kataResult(kataVotes, judgeCount);
+  const hasDecision = Boolean(
+    kumite?.decision
+    && (kumite.decision.winnerSide || kumite.decision.winType || kumite.decision.reasonText || kumite.decision.frozen || kumite.decision.confirmable)
+  );
+  const decision = hasDecision && kumite?.decision
+    ? {
+        side: kumite.decision.winnerSide ? toUiSide(kumite.decision.winnerSide) : null,
+        winType: kumite.decision.winType || null,
+        reasonCode: kumite.decision.reasonCode || null,
+        reasonText: kumite.decision.reasonText || null,
+        frozen: Boolean(kumite.decision.frozen),
+        confirmable: Boolean(kumite.decision.confirmable)
+      }
+    : null;
   return {
     schemaVersion: 3,
     id: match.id,
@@ -253,10 +314,48 @@ function toMatchState(match: MatchResponse): MatchState {
     kumite: {
       hantei: match.status === "HANTEI",
       lastPoint: lastPoint(match.recentEvents),
-      suggestion: null,
+      decision,
+      senshuState: {
+        holderSide: kumite?.senshu?.holderSide ? toUiSide(kumite.senshu.holderSide) : null,
+        awardedAt: kumite?.senshu?.awardedAt ? new Date(kumite.senshu.awardedAt).getTime() : null,
+        revoked: Boolean(kumite?.senshu?.revoked),
+        revokedAt: kumite?.senshu?.revokedAt ? new Date(kumite.senshu.revokedAt).getTime() : null,
+        revocationReasonCode: kumite?.senshu?.revocationReasonCode || null
+      },
       vr: {
-        aka: { card: true, active: false, result: "ready" },
-        ao: { card: true, active: false, result: "ready" }
+        aka: {
+          card: kumite?.videoReview ? kumite.videoReview.akaCardAvailable : true,
+          active: kumite?.videoReview?.status === "REQUESTED" && kumite.videoReview.activeRequestSide === "AKA",
+          result: kumite?.videoReview?.lastResolution === "DENIED"
+            ? "denied"
+            : kumite?.videoReview?.lastResolution === "MIENAI" || kumite?.videoReview?.lastResolution === "TECHNICAL_PROBLEM"
+              ? "inconclusive"
+            : kumite?.videoReview?.status === "REQUESTED"
+              ? "active"
+              : kumite?.videoReview?.lastResolution
+                ? "accepted"
+                : "ready"
+        },
+        ao: {
+          card: kumite?.videoReview ? kumite.videoReview.aoCardAvailable : true,
+          active: kumite?.videoReview?.status === "REQUESTED" && kumite.videoReview.activeRequestSide === "AO",
+          result: kumite?.videoReview?.lastResolution === "DENIED"
+            ? "denied"
+            : kumite?.videoReview?.lastResolution === "MIENAI" || kumite?.videoReview?.lastResolution === "TECHNICAL_PROBLEM"
+              ? "inconclusive"
+            : kumite?.videoReview?.status === "REQUESTED"
+              ? "active"
+              : kumite?.videoReview?.lastResolution
+                ? "accepted"
+                : "ready"
+        }
+      },
+      medical: {
+        injuredSide: kumite?.medical?.injuredSide ? toUiSide(kumite.medical.injuredSide) : null,
+        startedAt: kumite?.medical?.startedAt ? new Date(kumite.medical.startedAt).getTime() : null,
+        deadlineAt: kumite?.medical?.deadlineAt ? new Date(kumite.medical.deadlineAt).getTime() : null,
+        active: kumite?.medical?.status === "ACTIVE",
+        lastOutcome: kumite?.medical?.lastOutcome || null
       }
     },
     kata: {
@@ -280,12 +379,23 @@ function competitor(match: MatchResponse, side: BackendSide): Competitor {
     kataNo: participant?.entryId?.slice(0, 6) || "-",
     score: 0,
     senshu: false,
-    penalties: { chui: 0, hansokuChui: false, hansoku: false, shikkaku: false, kiken: false }
+    penalties: {
+      chui: 0,
+      hansokuChui: false,
+      penaltyLevel: "NONE",
+      reasonCode: null,
+      category1Level: "NONE",
+      category2Level: "NONE",
+      hansoku: false,
+      shikkaku: false,
+      kiken: false
+    }
   };
 }
 
 function withKumite(competitor: Competitor, kumite: MatchResponse["kumite"], side: Side): Competitor {
   if (!kumite) return competitor;
+  const penalties = side === "aka" ? kumite.penalties?.aka : kumite.penalties?.ao;
   return {
     ...competitor,
     score: side === "aka" ? kumite.akaScore : kumite.aoScore,
@@ -293,9 +403,13 @@ function withKumite(competitor: Competitor, kumite: MatchResponse["kumite"], sid
     penalties: {
       chui: side === "aka" ? kumite.akaChui : kumite.aoChui,
       hansokuChui: side === "aka" ? Boolean(kumite.akaHansokuChui) : Boolean(kumite.aoHansokuChui),
-      hansoku: side === "aka" ? kumite.akaHansoku : kumite.aoHansoku,
-      shikkaku: side === "aka" ? kumite.akaShikkaku : kumite.aoShikkaku,
-      kiken: side === "aka" ? kumite.akaKiken : kumite.aoKiken
+      penaltyLevel: penalties?.penaltyLevel || penalties?.category1Level || "NONE",
+      reasonCode: penalties?.reasonCode || null,
+      category1Level: penalties?.category1Level || "NONE",
+      category2Level: penalties?.category2Level || "NONE",
+      hansoku: penalties?.hansoku ?? (side === "aka" ? kumite.akaHansoku : kumite.aoHansoku),
+      shikkaku: penalties?.shikkaku ?? (side === "aka" ? kumite.akaShikkaku : kumite.aoShikkaku),
+      kiken: penalties?.kiken ?? (side === "aka" ? kumite.akaKiken : kumite.aoKiken)
     }
   };
 }
@@ -316,6 +430,12 @@ function eventLabel(event: MatchEventResponse) {
   if (event.type === "PENALTY") return `${event.side} ${event.penaltyCode}`;
   if (event.type === "KATA_VOTE") return `Judge ${event.judgeNumber} voted ${event.voteSide}`;
   if (event.type === "RESULT_CONFIRMED") return `${event.side} winner confirmed`;
+  if (event.type === "VIDEO_REVIEW_REQUEST") return `${event.side} video review`;
+  if (event.type === "VIDEO_REVIEW_RESOLVE") return "Video review resolved";
+  if (event.type === "MEDICAL_START") return `${event.side} medical timeout`;
+  if (event.type === "MEDICAL_RESOLVE") return "Medical workflow resolved";
+  if (event.type === "HANTEI_DECISION") return `${event.side} hantei decision`;
+  if (event.type === "SENSHU_REVOKE") return `${event.side || ""} senshu revoked`.trim();
   return event.type.replace(/_/g, " ").toLowerCase();
 }
 
@@ -353,19 +473,25 @@ function toUiSide(value: BackendSide): Side {
   return value === "AO" ? "ao" : "aka";
 }
 
-function penaltyCode(value: string) {
-  const map: Record<string, string> = {
-    hansokuChui: "HANSOKU_CHUI",
-    hansoku: "HANSOKU",
-    shikkaku: "SHIKKAKU",
-    kiken: "KIKEN"
-  };
-  return map[value] || value.toUpperCase();
-}
-
 function winType(value: string) {
   const normalized = value.toUpperCase().replace(/ /g, "_");
+  const allowed = new Set([
+    "POINTS",
+    "EIGHT_POINT_LEAD",
+    "TIME_UP",
+    "SENSHU",
+    "HANTEI",
+    "HIKIWAKE",
+    "KIKEN",
+    "HANSOKU",
+    "SHIKKAKU",
+    "TEN_SECOND_RULE",
+    "KATA_VOTES",
+    "MANUAL"
+  ]);
+  if (allowed.has(normalized)) return normalized;
   if (normalized.includes("KATA")) return "KATA_VOTES";
+  if (normalized.includes("10") || normalized.includes("TEN_SECOND")) return "TEN_SECOND_RULE";
   if (normalized.includes("8")) return "EIGHT_POINT_LEAD";
   if (normalized.includes("SENSHU")) return "SENSHU";
   if (normalized.includes("HANTEI")) return "HANTEI";

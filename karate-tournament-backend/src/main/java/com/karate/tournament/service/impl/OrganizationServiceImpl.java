@@ -3,6 +3,7 @@ package com.karate.tournament.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import com.karate.tournament.service.*;
+import com.karate.tournament.auth.CurrentActor;
 import com.karate.tournament.exception.ResourceNotFoundException;
 
 import com.karate.tournament.auth.PermissionService;
@@ -15,11 +16,15 @@ import com.karate.tournament.entity.enums.FeeItemType;
 import com.karate.tournament.entity.enums.OrganizationType;
 import com.karate.tournament.repository.ClubFeeItemRepository;
 import com.karate.tournament.repository.OrganizationRepository;
+import com.karate.tournament.dto.response.ManagedClubResponse;
 import com.karate.tournament.web.ApiMapper;
 import com.karate.tournament.dto.request.OrganizationCreateRequest;
 import com.karate.tournament.dto.response.OrganizationResponse;
 import com.karate.tournament.dto.request.OrganizationUpdateRequest;
+import com.karate.tournament.dto.response.OrganizationDashboardOverviewResponse;
+import com.karate.tournament.entity.enums.SystemRole;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,16 +34,39 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrganizationServiceImpl implements OrganizationService {
   private final OrganizationRepository organizations;
   private final ClubFeeItemRepository feeItems;
+  private final OrganizationDashboardService dashboards;
   private final PermissionService permissions;
   private final ApiMapper mapper;
 
   @Transactional(readOnly = true)
   public List<OrganizationResponse> list() {
+    permissions.requireGlobalAdmin();
     return organizations.findByDeletedAtIsNullOrderByNameAsc().stream().map(mapper::organization).toList();
   }
 
   @Transactional(readOnly = true)
+  public List<ManagedClubResponse> managedClubs() {
+    CurrentActor actor = permissions.currentActor();
+    List<Organization> clubs;
+    if (actor.hasRole(SystemRole.GLOBAL_ADMIN)) {
+      clubs = organizations.findByTypeAndDeletedAtIsNullOrderByNameAsc(OrganizationType.CLUB);
+    } else if (actor.primaryOrganizationId() != null) {
+      clubs = organizations.findByIdAndDeletedAtIsNull(actor.primaryOrganizationId())
+          .filter(organization -> organization.type == OrganizationType.CLUB && permissions.canViewClub(organization.id))
+          .stream()
+          .toList();
+    } else {
+      clubs = List.of();
+    }
+    Map<UUID, OrganizationDashboardOverviewResponse> overviewByClubId = dashboards.overviews(clubs);
+    return clubs.stream()
+        .map(club -> new ManagedClubResponse(mapper.organization(club), overviewByClubId.get(club.id)))
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
   public OrganizationResponse get(UUID id) {
+    permissions.requireClubView(id);
     return mapper.organization(requireOrganization(id));
   }
 

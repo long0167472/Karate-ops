@@ -51,10 +51,12 @@ const EXPENSE_STATUSES: Array<{ value: ExpenseDisbursementStatus; label: string 
 interface FeesTabProps {
   clubId: string;
   members: ClubMemberResponse[];
+  overviewData?: ClubFeeOverviewResponse | null;
+  onOverviewChange?: (overview: ClubFeeOverviewResponse) => void;
 }
 
-export function FeesTab({ clubId, members }: FeesTabProps) {
-  const [overview, setOverview] = useState<ClubFeeOverviewResponse | null>(null);
+export function FeesTab({ clubId, members, overviewData, onOverviewChange }: FeesTabProps) {
+  const [overview, setOverview] = useState<ClubFeeOverviewResponse | null>(overviewData ?? null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,7 @@ export function FeesTab({ clubId, members }: FeesTabProps) {
     try {
       const next = await apiGet<ClubFeeOverviewResponse>(`/api/organizations/${clubId}/finance/overview`);
       setOverview(next);
+      onOverviewChange?.(next);
       const overrideItems = next.feeItems.filter((item) => item.feeKind === "MONTHLY_TUITION_OVERRIDE" && item.status === "ACTIVE");
       const incomeItems = next.feeItems.filter((item) => item.feeKind === "ONE_TIME_INCOME" && item.status === "ACTIVE");
       setSelectedOverrideItemId((current) => overrideItems.some((item) => item.id === current) ? current : overrideItems[0]?.id || "");
@@ -89,6 +92,10 @@ export function FeesTab({ clubId, members }: FeesTabProps) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    setOverview(overviewData ?? null);
+  }, [clubId, overviewData]);
 
   useEffect(() => {
     load();

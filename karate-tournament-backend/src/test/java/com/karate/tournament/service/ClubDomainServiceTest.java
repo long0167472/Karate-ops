@@ -70,7 +70,7 @@ class ClubDomainServiceTest {
         .hasMessageContaining("ACTIVE club member");
 
     ClubMemberResponse member = members.create(organization.id(), new ClubMemberCreateRequest(
-        person.id(), null, ClubMemberRole.ATHLETE, ClubMemberStatus.ACTIVE, null, null, null, null, null, null, null, null, null
+        person.id(), null, ClubMemberRole.ATHLETE, ClubMemberStatus.ACTIVE, null, null, null, null, null
     ));
     roster.create(organization.id(), new ClubRosterCreateRequest(athlete.id(), ClubRosterStatus.ACTIVE, null));
 

@@ -49,6 +49,7 @@ public class AttendanceServiceImpl implements AttendanceService {
   private final OrganizationMemberRepository members;
   private final AthleteRepository athletes;
   private final ClubRosterService rosterService;
+  private final AttendanceLeaveRequestService leaveRequests;
   private final PermissionService permissions;
   private final ApiMapper mapper;
 
@@ -90,7 +91,9 @@ public class AttendanceServiceImpl implements AttendanceService {
       }
       session.tournamentParticipant = participant;
     }
-    return mapper.attendanceSession(sessions.save(session));
+    AttendanceSession saved = sessions.save(session);
+    leaveRequests.materializeApprovedLeavesForSession(saved);
+    return mapper.attendanceSession(saved);
   }
 
   @Transactional
@@ -113,6 +116,7 @@ public class AttendanceServiceImpl implements AttendanceService {
       }
       session.tournamentParticipant = participant;
     }
+    leaveRequests.materializeApprovedLeavesForSession(session);
     return mapper.attendanceSession(session);
   }
 

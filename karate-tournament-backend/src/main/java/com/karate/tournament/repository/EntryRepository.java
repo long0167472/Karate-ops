@@ -75,4 +75,20 @@ public interface EntryRepository extends JpaRepository<Entry, UUID> {
       @Param("organizationId") UUID organizationId,
       @Param("athleteId") UUID athleteId
   );
+
+  @Query("""
+      select e.tournamentParticipant.organization.id as organizationId, count(e) as total
+      from Entry e
+      where e.tournamentParticipant.organization.id in :organizationIds
+        and e.deletedAt is null
+        and e.tournamentParticipant.deletedAt is null
+      group by e.tournamentParticipant.organization.id
+      """)
+  List<OrganizationCountProjection> countTournamentEntriesByOrganizationIds(@Param("organizationIds") List<UUID> organizationIds);
+
+  interface OrganizationCountProjection {
+    UUID getOrganizationId();
+
+    Long getTotal();
+  }
 }

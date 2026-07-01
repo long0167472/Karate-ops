@@ -18,6 +18,7 @@ public record MatchEventResponse(
     String penaltyCode,
     Integer judgeNumber,
     Side voteSide,
+    String payloadJson,
     Instant occurredAt
 ) {
 }

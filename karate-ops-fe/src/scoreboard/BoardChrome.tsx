@@ -39,7 +39,8 @@ export function BoardHeader({ match }: BoardHeaderProps) {
 function penaltySummary(match: MatchState, side: Side): string {
   const p = match.competitors[side].penalties;
   const parts: string[] = [];
-  if (p.chui > 0) parts.push(`C${p.chui}`);
+  if (p.penaltyLevel !== "NONE") parts.push(p.penaltyLevel);
+  if (p.reasonCode) parts.push(p.reasonCode);
   if (p.hansokuChui) parts.push("HC");
   if (p.hansoku) parts.push("HANSOKU");
   if (p.shikkaku) parts.push("SHIKKAKU");

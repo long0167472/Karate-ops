@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Award, CheckCircle2, CircleDollarSign, Mail, Search, UserPlus, X, XCircle } from "lucide-react";
-import { type Dispatch, type ReactNode, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
+import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useMemo, useState } from "react";
 import type {
   AccountRequestResponse,
   AthleteResponse,
@@ -15,7 +15,7 @@ import type {
   MemberTuitionOverrideResponse,
   PersonResponse
 } from "../../../types";
-import { apiDelete, apiGet, apiPatch, apiPost } from "../../../apiClient";
+import { apiDelete, apiPatch, apiPost } from "../../../apiClient";
 import { cx } from "../../../utils";
 import { MEMBER_ROLES, MEMBER_STATUSES, PAYMENT_STATUSES } from "../clubConstants";
 import { attendanceLabel, attendancePercent, errorMessage, formatDate, genderLabel, initials, paymentLabel, roleLabel, statusLabel, today } from "../clubUtils";
@@ -33,6 +33,7 @@ interface MembersTabProps {
   sessions: AttendanceSessionResponse[];
   roster: ClubRosterResponse[];
   athletes: AthleteResponse[];
+  financeOverview: ClubFeeOverviewResponse | null;
   busy: boolean;
   error: string | null;
   memberSearch: string;
@@ -72,6 +73,7 @@ export function MembersTab({
   sessions,
   roster,
   athletes,
+  financeOverview,
   busy,
   error,
   memberSearch,
@@ -100,43 +102,24 @@ export function MembersTab({
   const [showAccountRequests, setShowAccountRequests] = useState(false);
   const [requestFilter, setRequestFilter] = useState<"ALL" | "PENDING" | "APPROVED" | "REJECTED">("PENDING");
   const [decisionDraft, setDecisionDraft] = useState<{ request: AccountRequestResponse; status: "APPROVED" | "REJECTED"; note: string } | null>(null);
-  const [feeOverview, setFeeOverview] = useState<ClubFeeOverviewResponse | null>(null);
-  const [feeLoading, setFeeLoading] = useState(false);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId) || null;
   const pendingRequests = accountRequests.filter((request) => request.status === "PENDING").length;
-
-  const loadFeeOverview = useCallback(async () => {
-    setFeeLoading(true);
-    try {
-      const overview = await apiGet<ClubFeeOverviewResponse>(`/api/organizations/${clubId}/finance/overview`);
-      setFeeOverview(overview);
-    } catch (err) {
-      console.warn("Finance API not available:", err);
-      setFeeOverview(null);
-    } finally {
-      setFeeLoading(false);
-    }
-  }, [clubId]);
-
-  useEffect(() => {
-    loadFeeOverview();
-  }, [loadFeeOverview]);
 
   useEffect(() => {
     setSelectedMemberIds((current) => current.filter((memberId) => members.some((member) => member.id === memberId)));
   }, [members]);
 
-  const defaultTuition = feeOverview?.feeItems.find((item) => item.feeKind === "MONTHLY_TUITION_DEFAULT");
+  const defaultTuition = financeOverview?.feeItems.find((item) => item.feeKind === "MONTHLY_TUITION_DEFAULT");
   const tuitionOverrideByMember = useMemo(() => {
-    return Object.fromEntries((feeOverview?.tuitionOverrides ?? []).map((row) => [row.memberId, row]));
-  }, [feeOverview?.tuitionOverrides]);
+    return Object.fromEntries((financeOverview?.tuitionOverrides ?? []).map((row) => [row.memberId, row]));
+  }, [financeOverview?.tuitionOverrides]);
   const assignmentsByMember = useMemo(() => {
-    return (feeOverview?.assignments ?? []).reduce<Record<string, NonNullable<ClubFeeOverviewResponse["assignments"]>>>((grouped, assignment) => {
+    return (financeOverview?.assignments ?? []).reduce<Record<string, NonNullable<ClubFeeOverviewResponse["assignments"]>>>((grouped, assignment) => {
       grouped[assignment.memberId] = [...(grouped[assignment.memberId] ?? []), assignment];
       return grouped;
     }, {});
-  }, [feeOverview?.assignments]);
+  }, [financeOverview?.assignments]);
   const selectedVisibleIds = filteredMembers.map((member) => member.id);
   const allVisibleSelected = selectedVisibleIds.length > 0 && selectedVisibleIds.every((id) => selectedMemberIds.includes(id));
 
@@ -159,7 +142,7 @@ export function MembersTab({
 
   async function patchPerson(member: ClubMemberResponse, body: Partial<PersonResponse>) {
     if (!member.personId) throw new Error("Thành viên này chưa có hồ sơ cá nhân.");
-    const person = await apiPatch<PersonResponse>(`/api/persons/${member.personId}`, body);
+    const person = await apiPatch<PersonResponse>(`/api/organizations/${clubId}/persons/${member.personId}`, body);
     mergeMember({
       ...member,
       personName: person.displayName,
@@ -205,7 +188,7 @@ export function MembersTab({
         onCreateRoster={(member) => runMemberAction(async () => {
           if (!member.personId) throw new Error("Thành viên này chưa có hồ sơ cá nhân để tạo VĐV.");
           const athlete = athletes.find((item) => item.personId === member.personId)
-            || await apiPost<AthleteResponse>("/api/athletes", { personId: member.personId, primaryOrganizationId: clubId, status: "ACTIVE" });
+            || await apiPost<AthleteResponse>(`/api/organizations/${clubId}/athletes`, { personId: member.personId, status: "ACTIVE" });
           const rosterItem = await apiPost<ClubRosterResponse>(`/api/organizations/${clubId}/roster`, { athleteId: athlete.id, status: "ACTIVE", joinedAt: today() });
           setRoster((current) => [rosterItem, ...current]);
           setAthletes((current) => current.some((item) => item.id === athlete.id) ? current : [...current, athlete]);
@@ -330,7 +313,7 @@ export function MembersTab({
                   <span>Học phí</span>
                 </div>
                 <div className="club-member-row-actions">
-                  <button disabled={feeLoading} onClick={onOpenFinance}>
+                  <button disabled={busy} onClick={onOpenFinance}>
                     <CircleDollarSign size={16} /> Tài chính
                   </button>
                 </div>
@@ -453,7 +436,7 @@ function MemberDetailScreen({
 
       <div className="club-member-alerts">
         {attendance.rate > 0 && attendance.rate < 70 ? <Badge tone="danger">Chuyên cần thấp</Badge> : null}
-        {member.tuitionStatus === "OVERDUE" || member.tuitionStatus === "PARTIAL" || member.tuitionStatus === "PENDING" ? <Badge tone="danger">Cần xử lý học phí</Badge> : null}
+        {financialSummary.outstanding > 0 ? <Badge tone="danger">Cần xử lý học phí</Badge> : null}
         {!member.phone || !member.currentAddress ? <Badge tone="warm">Thiếu thông tin hồ sơ</Badge> : null}
         {rosterItem ? <Badge tone="green">Đã có trong roster</Badge> : null}
       </div>

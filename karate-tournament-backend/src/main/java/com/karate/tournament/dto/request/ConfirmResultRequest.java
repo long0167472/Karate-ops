@@ -11,7 +11,7 @@ import java.time.*;
 import java.util.*;
 
 public record ConfirmResultRequest(
-    @NotNull Side winnerSide,
+    Side winnerSide,
     WinType winType,
     String reason
 ) {

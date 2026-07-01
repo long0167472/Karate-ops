@@ -12,6 +12,7 @@ public interface PersonService {
   PersonResponse get(UUID id);
   PersonResponse create(PersonCreateRequest request);
   PersonResponse update(UUID id, PersonUpdateRequest request);
+  PersonResponse updateInOrganization(UUID organizationId, UUID id, PersonUpdateRequest request);
   void delete(UUID id);
   Person requirePerson(UUID id);
 }

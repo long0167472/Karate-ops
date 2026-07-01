@@ -2,7 +2,7 @@
 name: fee-system
 description: Fee item lifecycle — creation, billing cycle, due date computation, member assignment
 type: feature
-last_updated: 2026-06-11
+last_updated: 2026-06-29
 criticality: high
 metadata:
   owner: backend
@@ -22,6 +22,22 @@ source_references:
 ---
 
 # Fee System
+
+## 2026-06-29 Updates
+
+These notes supersede any older conflicting text below.
+
+- `MemberFeeAssignment` plus tuition override is now the only authoritative finance source for club workspace views.
+- Member/account write DTOs no longer accept summary finance fields:
+  - `tuitionStatus`
+  - `tuitionPaidAmount`
+  - `otherFeeStatus`
+  - `otherFeePaidAmount`
+- FE member filters and badges should derive finance state from `finance/overview`, not from deprecated columns on `OrganizationMember`.
+- `ClubFeeServiceImpl.applyFeeItem(...)` is now idempotent against duplicate / concurrent apply requests:
+  - service checks for an existing active assignment first
+  - duplicate insert races are treated as no-op via `DataIntegrityViolationException`
+  - DB uniqueness is reinforced by a partial unique index on `(organization_member_id, fee_item_id)` where `deleted_at is null`
 
 ## Data model
 

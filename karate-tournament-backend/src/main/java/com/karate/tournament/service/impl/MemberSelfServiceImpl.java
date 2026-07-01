@@ -3,17 +3,20 @@ package com.karate.tournament.service.impl;
 import com.karate.tournament.auth.CurrentActor;
 import com.karate.tournament.auth.PermissionService;
 import com.karate.tournament.dto.response.AttendanceRecordResponse;
+import com.karate.tournament.dto.response.LeaveRequestResponse;
 import com.karate.tournament.dto.response.MemberAttendanceSessionResponse;
 import com.karate.tournament.dto.response.MemberAttendanceSummaryResponse;
 import com.karate.tournament.dto.response.MemberClubProfileResponse;
 import com.karate.tournament.dto.response.MemberFeeAssignmentResponse;
 import com.karate.tournament.dto.response.MemberFeeSummaryResponse;
+import com.karate.tournament.entity.AttendanceLeaveRequest;
 import com.karate.tournament.entity.AttendanceRecord;
 import com.karate.tournament.entity.AttendanceSession;
 import com.karate.tournament.entity.MemberFeeAssignment;
 import com.karate.tournament.entity.OrganizationMember;
 import com.karate.tournament.entity.enums.AttendanceRecordStatus;
 import com.karate.tournament.entity.enums.LeaveRequestStatus;
+import com.karate.tournament.exception.ForbiddenException;
 import com.karate.tournament.exception.ResourceNotFoundException;
 import com.karate.tournament.repository.AttendanceLeaveRequestRepository;
 import com.karate.tournament.repository.AttendanceRecordRepository;
@@ -64,7 +67,12 @@ public class MemberSelfServiceImpl implements MemberSelfService {
 
   @Transactional(readOnly = true)
   public MemberAttendanceSummaryResponse attendance() {
-    List<OrganizationMember> myMembers = myMemberships();
+    List<OrganizationMember> myMembers = myMemberships().stream()
+        .filter(member -> member.attendanceViewEnabled)
+        .toList();
+    if (myMembers.isEmpty()) {
+      throw new ForbiddenException("Attendance viewing has been disabled by your club.");
+    }
     Map<UUID, OrganizationMember> membersByOrg = myMembers.stream()
         .collect(Collectors.toMap(member -> member.organization.id, Function.identity(), (left, right) -> left));
     List<AttendanceSession> sessionRows = myMembers.stream()
@@ -77,9 +85,14 @@ public class MemberSelfServiceImpl implements MemberSelfService {
         .toList();
     Map<UUID, AttendanceRecord> recordBySession = recordRows.stream()
         .collect(Collectors.toMap(record -> record.session.id, Function.identity(), (left, right) -> left));
-    var leaveBySession = myMembers.stream()
+    List<AttendanceLeaveRequest> leaveRows = myMembers.stream()
         .flatMap(member -> leaveRequests.findByMember_IdAndDeletedAtIsNullOrderByCreatedAtDesc(member.id).stream())
+        .sorted(Comparator.comparing((AttendanceLeaveRequest request) -> request.createdAt).reversed())
+        .toList();
+    Map<UUID, AttendanceLeaveRequest> leaveBySession = leaveRows.stream()
+        .filter(request -> request.session != null)
         .collect(Collectors.toMap(request -> request.session.id, Function.identity(), (left, right) -> left));
+    List<LeaveRequestResponse> leaveResponses = leaveRows.stream().map(mapper::leaveRequest).toList();
     List<MemberAttendanceSessionResponse> responseRows = sessionRows.stream()
         .map(session -> {
           OrganizationMember member = membersByOrg.get(session.organization.id);
@@ -104,8 +117,9 @@ public class MemberSelfServiceImpl implements MemberSelfService {
         count(recordRows, AttendanceRecordStatus.LATE),
         count(recordRows, AttendanceRecordStatus.ABSENT),
         count(recordRows, AttendanceRecordStatus.EXCUSED),
-        leaveBySession.values().stream().filter(request -> request.status == LeaveRequestStatus.PENDING).count(),
-        responseRows
+        leaveRows.stream().filter(request -> request.status == LeaveRequestStatus.PENDING).count(),
+        responseRows,
+        leaveResponses
     );
   }
 

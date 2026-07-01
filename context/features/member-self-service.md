@@ -3,7 +3,7 @@ name: member-self-service
 description: Member portal — self-service club profile, fee summary, attendance history, and leave requests via /me endpoints
 type: feature
 version: "1.0"
-last_updated: "2026-06-11"
+last_updated: "2026-06-30"
 criticality: MEDIUM
 metadata:
   owner: backend
@@ -22,6 +22,20 @@ related_context_files:
 ---
 
 # Feature: Member Self-Service Portal
+
+## 2026-06-30 Updates
+
+These notes supersede any older conflicting text below.
+
+- `GET /api/me/attendance` now filters memberships by `attendanceViewEnabled = true`.
+- If the user has no membership allowed to view attendance, `/api/me/attendance` returns 403 with a domain-specific message rather than a generic failure.
+- `POST /api/me/attendance/leave-requests` now requires the new leave-request contract:
+  - `requestType`
+  - `sessionId` for `LEAVE_SESSION` / `LATE`
+  - `fromDate` + `toDate` for `LEAVE_LONG_TERM`
+- `GET /api/me/attendance` now returns both `sessionRows` and `leaveRequests`, so long-term requests remain visible before a future session is created in-range.
+- The member portal FE now submits all three request flows directly: `LEAVE_SESSION`, `LEAVE_LONG_TERM`, and `LATE`.
+- Approved leave is now auto-applied to attendance records; the member portal no longer depends on a coach manually changing the record afterward.
 
 ## Actors
 - **Authenticated Member (MEMBER role)** — all /me endpoints; available to any logged-in user

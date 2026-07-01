@@ -1,6 +1,7 @@
 package com.karate.tournament.entity;
 
 import com.karate.tournament.entity.enums.LeaveRequestStatus;
+import com.karate.tournament.entity.enums.LeaveRequestType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.time.LocalDate;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -25,7 +27,7 @@ public class AttendanceLeaveRequest extends BaseEntity {
     return new AttendanceLeaveRequest();
   }
 
-  @ManyToOne(fetch = FetchType.EAGER, optional = false)
+  @ManyToOne(fetch = FetchType.EAGER)
   @JoinColumn(name = "attendance_session_id")
   public AttendanceSession session;
 
@@ -42,11 +44,24 @@ public class AttendanceLeaveRequest extends BaseEntity {
   public AppUser decidedByUser;
 
   @Enumerated(EnumType.STRING)
+  @Column(name = "request_type", nullable = false, length = 40)
+  public LeaveRequestType requestType = LeaveRequestType.LEAVE_SESSION;
+
+  @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 40)
   public LeaveRequestStatus status = LeaveRequestStatus.PENDING;
 
   @Column(nullable = false, length = 500)
   public String reason;
+
+  @Column(name = "from_date")
+  public LocalDate fromDate;
+
+  @Column(name = "to_date")
+  public LocalDate toDate;
+
+  @Column(name = "expires_at")
+  public Instant expiresAt;
 
   @Column(name = "decision_note", length = 500)
   public String decisionNote;

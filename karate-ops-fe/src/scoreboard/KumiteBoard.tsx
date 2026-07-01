@@ -24,15 +24,19 @@ function KumitePenalties({
   penalties: Competitor["penalties"];
 }) {
   const dq = penalties.hansoku || penalties.shikkaku || penalties.kiken;
+  const chuiCount = penalties.chui;
 
   return (
     <div className={cx(C.penaltyLadder, side)}>
-      {[1, 2, 3].map((n) => (
+      {["C1", "C2", "C3"].map((label, index) => (
         <span
-          key={n}
-          className={cx(C.penaltyCell, penalties.chui >= n && C.penaltyActive)}
+          key={label}
+          className={cx(
+            C.penaltyCell,
+            chuiCount > index && C.penaltyActive
+          )}
         >
-          C{n}
+          {label}
         </span>
       ))}
       <span
@@ -131,12 +135,14 @@ function KumiteCenter({
   remaining: number;
 }) {
   const warning = remaining <= 15000 && remaining > 0;
-  const suggestion = match.kumite.suggestion;
+  const decision = match.kumite.decision;
 
   const caption = warning
     ? "ATOSHIBARAKU"
     : match.kumite.hantei
       ? "HANTEI"
+      : decision?.winType === "HIKIWAKE"
+        ? "HIKIWAKE"
       : "WKF 2026";
 
   const senshuSide: Side | null = match.competitors.aka.senshu
@@ -163,10 +169,15 @@ function KumiteCenter({
             <Crown size={12} /> 先 SENSHU {sideLabel(senshuSide)}
           </span>
         )}
-        {suggestion && (
+        {decision && (
           <span className={cx(C.smallChip, "gold")}>
             <Sparkles size={12} />
-            {winnerText(suggestion.side, suggestion.reason)}
+            {winnerText(decision.side, decision.reasonText || decision.winType || undefined)}
+          </span>
+        )}
+        {match.kumite.medical.active && (
+          <span className={cx(C.smallChip, "gold")}>
+            <AlertTriangle size={12} /> Medical
           </span>
         )}
         {match.kumite.hantei && (

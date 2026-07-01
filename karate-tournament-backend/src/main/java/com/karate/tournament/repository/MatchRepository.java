@@ -17,6 +17,8 @@ public interface MatchRepository extends JpaRepository<Match, UUID> {
 
   List<Match> findByCategory_IdAndDeletedAtIsNullOrderByRoundNumberAscBracketPositionAsc(UUID categoryId);
 
+  List<Match> findByTeamMatchGroupIdAndDeletedAtIsNullOrderByTeamBoutOrderAscMatchNumberAsc(UUID teamMatchGroupId);
+
   List<Match> findByTatami_IdAndDeletedAtIsNullAndStatusInOrderByScheduledAtAscMatchNumberAsc(
       UUID tatamiId,
       Collection<MatchStatus> statuses

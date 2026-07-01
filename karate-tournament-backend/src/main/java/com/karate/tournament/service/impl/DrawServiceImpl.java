@@ -3,6 +3,7 @@ package com.karate.tournament.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import com.karate.tournament.service.*;
+import com.karate.tournament.exception.BadRequestException;
 import com.karate.tournament.exception.BusinessConflictException;
 
 import com.karate.tournament.auth.PermissionService;
@@ -56,6 +57,16 @@ public class DrawServiceImpl implements DrawService {
       throw new BusinessConflictException("Category already has generated matches");
     }
 
+    boolean repechage = request != null && request.enableRepechage() != null
+        ? request.enableRepechage()
+        : Boolean.TRUE.equals(category.repechageEnabled);
+    BracketType bracketType = request == null || request.bracketType() == null
+        ? (repechage ? BracketType.REPECHAGE : BracketType.SINGLE_ELIMINATION)
+        : request.bracketType();
+    if (bracketType == BracketType.POOL) {
+      throw new BadRequestException("POOL draw generation is not implemented yet");
+    }
+
     List<Entry> entryList = new ArrayList<>(entries.findByCategory_IdAndDeletedAtIsNullOrderBySeedNoAscCreatedAtAsc(categoryId));
     entryList.removeIf(entry -> entry.status.name().equals("WITHDRAWN") || entry.status.name().equals("DISQUALIFIED"));
     if (entryList.size() < 2) {
@@ -69,26 +80,29 @@ public class DrawServiceImpl implements DrawService {
           .thenComparing(entry -> entry.createdAt));
     }
 
-    int bracketSize = bracketRules.nextPowerOfTwo(entryList.size());
-    int roundCount = bracketRules.roundCount(bracketSize);
-    boolean repechage = request != null && request.enableRepechage() != null
-        ? request.enableRepechage()
-        : Boolean.TRUE.equals(category.repechageEnabled);
+    int bracketSize = bracketType == BracketType.ROUND_ROBIN
+        ? entryList.size()
+        : bracketRules.nextPowerOfTwo(entryList.size());
+    int roundCount = bracketType == BracketType.ROUND_ROBIN ? 1 : bracketRules.roundCount(bracketSize);
     Bracket bracket = Bracket.create();
     bracket.category = category;
-    bracket.type = request == null || request.bracketType() == null ? (repechage ? BracketType.REPECHAGE : BracketType.SINGLE_ELIMINATION) : request.bracketType();
+    bracket.type = bracketType;
     bracket.size = bracketSize;
     bracket.status = BracketStatus.GENERATED;
     brackets.save(bracket);
 
-    List<List<Match>> rounds = createMatches(category, bracket, bracketSize, roundCount);
-    connectWinnerPaths(rounds);
-    if (bracket.type == BracketType.REPECHAGE && roundCount >= 2) {
-      List<Match> bronzeMatches = createBronzeMatches(category, bracket, rounds, roundCount);
-      connectSemifinalLosersToBronze(rounds, bronzeMatches);
+    if (bracket.type == BracketType.ROUND_ROBIN) {
+      createRoundRobinMatches(category, bracket, entryList);
+    } else {
+      List<List<Match>> rounds = createMatches(category, bracket, bracketSize, roundCount);
+      connectWinnerPaths(rounds);
+      if (bracket.type == BracketType.REPECHAGE && roundCount >= 2) {
+        List<Match> bronzeMatches = createBronzeMatches(category, bracket, rounds, roundCount);
+        connectSemifinalLosersToBronze(rounds, bronzeMatches);
+      }
+      assignInitialEntries(rounds.get(0), entryList, bracketSize);
+      autoAdvanceFirstRoundByes(rounds.get(0));
     }
-    assignInitialEntries(rounds.get(0), entryList, bracketSize);
-    autoAdvanceFirstRoundByes(rounds.get(0));
 
     category.status = "DRAWN";
     List<Match> generated = matches.findByCategory_IdAndDeletedAtIsNullOrderByRoundNumberAscBracketPositionAsc(categoryId);
@@ -99,6 +113,36 @@ public class DrawServiceImpl implements DrawService {
         entryList.size(),
         generated.stream().map(mapper::match).toList()
     );
+  }
+
+  private List<Match> createRoundRobinMatches(Category category, Bracket bracket, List<Entry> entryList) {
+    List<Match> roundRobinMatches = new ArrayList<>();
+    int matchNumber = 1;
+    for (int akaIndex = 0; akaIndex < entryList.size() - 1; akaIndex += 1) {
+      for (int aoIndex = akaIndex + 1; aoIndex < entryList.size(); aoIndex += 1) {
+        Match match = Match.create();
+        match.tournament = category.tournament;
+        match.category = category;
+        match.bracket = bracket;
+        match.matchNumber = matchNumber++;
+        match.roundNumber = 1;
+        match.roundName = "Round Robin";
+        match.bracketPosition = roundRobinMatches.size() + 1;
+        match.status = MatchStatus.SCHEDULED;
+        match.mode = category.discipline;
+        matches.save(match);
+        if (isKumite(match.mode)) {
+          KumiteMatchState state = KumiteMatchState.create();
+          state.match = match;
+          initializeDuration(category, state);
+          kumiteStates.save(state);
+        }
+        createParticipant(match, entryList.get(akaIndex), Side.AKA);
+        createParticipant(match, entryList.get(aoIndex), Side.AO);
+        roundRobinMatches.add(match);
+      }
+    }
+    return roundRobinMatches;
   }
 
   private List<List<Match>> createMatches(Category category, Bracket bracket, int bracketSize, int roundCount) {
@@ -122,6 +166,7 @@ public class DrawServiceImpl implements DrawService {
         if (isKumite(match.mode)) {
           KumiteMatchState state = KumiteMatchState.create();
           state.match = match;
+          initializeDuration(category, state);
           kumiteStates.save(state);
         }
         roundMatches.add(match);
@@ -162,6 +207,7 @@ public class DrawServiceImpl implements DrawService {
       if (isKumite(match.mode)) {
         KumiteMatchState state = KumiteMatchState.create();
         state.match = match;
+        initializeDuration(category, state);
         kumiteStates.save(state);
       }
       bronzeMatches.add(match);
@@ -187,12 +233,16 @@ public class DrawServiceImpl implements DrawService {
         continue;
       }
       Match match = firstRound.get(slot / 2);
-      MatchParticipant participant = MatchParticipant.create();
-      participant.match = match;
-      participant.entry = entryList.get(slot);
-      participant.side = bracketRules.sideForSlot(slot);
-      matchParticipants.save(participant);
+      createParticipant(match, entryList.get(slot), bracketRules.sideForSlot(slot));
     }
+  }
+
+  private void createParticipant(Match match, Entry entry, Side side) {
+    MatchParticipant participant = MatchParticipant.create();
+    participant.match = match;
+    participant.entry = entry;
+    participant.side = side;
+    matchParticipants.save(participant);
   }
 
   private void autoAdvanceFirstRoundByes(List<Match> firstRound) {
@@ -215,5 +265,11 @@ public class DrawServiceImpl implements DrawService {
 
   private boolean isKumite(CategoryDiscipline discipline) {
     return discipline == CategoryDiscipline.KUMITE || discipline == CategoryDiscipline.TEAM_KUMITE;
+  }
+
+  private void initializeDuration(Category category, KumiteMatchState state) {
+    int durationMs = Math.max(30, category.matchDurationSeconds == null ? 180 : category.matchDurationSeconds) * 1000;
+    state.durationMs = durationMs;
+    state.remainingMs = durationMs;
   }
 }

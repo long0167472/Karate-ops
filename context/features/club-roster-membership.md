@@ -3,7 +3,7 @@ name: club-roster-membership
 description: Club member management, athlete roster, person identity, and the domain invariant chain
 type: feature
 version: "1.0"
-last_updated: "2026-06-11"
+last_updated: "2026-06-29"
 criticality: HIGH
 metadata:
   owner: backend
@@ -25,6 +25,29 @@ related_context_files:
 ---
 
 # Feature: Club Roster & Membership
+
+## 2026-06-29 Updates
+
+These notes supersede any older conflicting text below.
+
+- `GET /api/organizations`, `GET /api/persons`, and `GET /api/athletes` are now admin-only.
+- Club-management FE should use org-scoped APIs:
+  - `GET /api/organizations/managed-clubs`
+  - `GET|POST|PATCH /api/organizations/{orgId}/athletes[...]`
+  - `PATCH /api/organizations/{orgId}/persons/{personId}`
+- Athlete ownership is now **hybrid**:
+  - `Athlete.primaryOrganization` remains the owning / profile-editing club.
+  - The same athlete may have multiple `ACTIVE` roster rows across different clubs.
+  - Secondary clubs may use the athlete for roster, attendance, and tournament flows inside their own org only.
+- Editing rules:
+  - Global admin may still use the global backoffice endpoints.
+  - Club-side person/athlete editing is restricted to the **primary club** only.
+  - Reassigning `primaryOrganizationId` requires the athlete to already have an `ACTIVE` roster in the target org.
+- `ClubRosterServiceImpl.requireAthleteBelongsToOrganization(...)` now validates **active roster membership**, not `primaryOrganizationId`.
+- Removing an `ACTIVE` roster from the current primary club now behaves as follows:
+  - if the athlete is still `ACTIVE` in another club, the removal is blocked until primary club is reassigned manually;
+  - if no active roster remains anywhere, `primaryOrganizationId` is cleared to `null`.
+- `ClubMemberCreateRequest`, `ClubMemberUpdateRequest`, and `MemberAccountCreateRequest` no longer accept finance summary fields such as `tuitionStatus` / `otherFeeStatus`. Those columns are deprecated data only.
 
 ## Domain Invariant Chain
 

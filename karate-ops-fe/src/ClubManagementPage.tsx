@@ -152,7 +152,7 @@ export default function ClubManagementPage({
     setLoadingClubs(true);
     setError(null);
     try {
-      const { clubs, dashboards: nextDashboards } = await fetchClubDirectory(isAdmin, user.primaryOrganizationId);
+      const { clubs, dashboards: nextDashboards } = await fetchClubDirectory();
       setOrganizations(clubs);
       setDashboards(nextDashboards);
     } catch (err) {
@@ -160,7 +160,7 @@ export default function ClubManagementPage({
     } finally {
       setLoadingClubs(false);
     }
-  }, [isAdmin, user.primaryOrganizationId]);
+  }, []);
 
   const loadClub = useCallback(async (id: string) => {
     if (!id) return;
@@ -185,13 +185,8 @@ export default function ClubManagementPage({
       });
       setAthletes(nextAthletes);
       setSelectedSessionId((current) => current || nextSessions[0]?.id || "");
-      try {
-        const nextLeaveRequests = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${id}/leave-requests`);
-        setLeaveRequests(nextLeaveRequests);
-      } catch (err) {
-        console.warn("Leave requests API not available:", err);
-        setLeaveRequests([]);
-      }
+      const nextLeaveRequests = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${id}/attendance-leave-requests`);
+      setLeaveRequests(nextLeaveRequests);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -230,6 +225,14 @@ export default function ClubManagementPage({
   const activeMembers = members.filter((member) => member.status === "ACTIVE");
   const rosterPersonIds = new Set(roster.map((item) => item.personId));
   const rosterCandidates = members.filter((member) => member.personId && member.status === "ACTIVE" && !rosterPersonIds.has(member.personId));
+  const financeAssignmentsByMember = useMemo(
+    () => groupFeeAssignmentsByMember(financeOverview?.assignments ?? []),
+    [financeOverview?.assignments]
+  );
+  const financeStatusByMember = useMemo(
+    () => Object.fromEntries(members.map((member) => [member.id, memberFinanceStatus(financeAssignmentsByMember[member.id] ?? [])])),
+    [financeAssignmentsByMember, members]
+  );
 
   const filteredMembers = useMemo(() => {
     const keyword = normalizeText(memberSearch);
@@ -238,10 +241,10 @@ export default function ClubManagementPage({
       return (!keyword || name.includes(keyword))
         && (memberRoleFilter === "ALL" || member.role === memberRoleFilter)
         && (memberStatusFilter === "ALL" || member.status === memberStatusFilter)
-        && (memberTuitionFilter === "ALL" || member.tuitionStatus === memberTuitionFilter)
+        && (memberTuitionFilter === "ALL" || financeStatusByMember[member.id] === memberTuitionFilter)
         && (memberStudentFilter === "ALL" || (memberStudentFilter === "STUDENT" ? member.student : !member.student));
     });
-  }, [memberRoleFilter, memberSearch, memberStatusFilter, memberStudentFilter, memberTuitionFilter, members]);
+  }, [financeStatusByMember, memberRoleFilter, memberSearch, memberStatusFilter, memberStudentFilter, memberTuitionFilter, members]);
 
   const filteredRoster = useMemo(() => {
     return roster.filter((item) => rosterStatusFilter === "ALL" || item.status === rosterStatusFilter);
@@ -264,8 +267,14 @@ export default function ClubManagementPage({
   const lowAttendanceRows = attendance?.lowAttendance ?? [];
   const memberInsights = {
     activeStudents: members.filter((member) => member.student && member.status === "ACTIVE").length,
-    tuitionPending: members.filter((member) => member.tuitionStatus === "PENDING" || member.tuitionStatus === "OVERDUE" || member.tuitionStatus === "PARTIAL").length,
-    paidTuition: members.filter((member) => member.tuitionStatus === "PAID" || member.tuitionStatus === "WAIVED").length,
+    tuitionPending: members.filter((member) => {
+      const status = financeStatusByMember[member.id];
+      return status === "PENDING" || status === "OVERDUE" || status === "PARTIAL";
+    }).length,
+    paidTuition: members.filter((member) => {
+      const status = financeStatusByMember[member.id];
+      return status === "PAID" || status === "WAIVED";
+    }).length,
     hiddenAttendance: members.filter((member) => !member.attendanceViewEnabled).length
   };
   const pendingAccountRequests = accountRequests.filter((request) => request.status === "PENDING").length;
@@ -691,6 +700,7 @@ export default function ClubManagementPage({
                   sessions={sessions}
                   roster={roster}
                   athletes={athletes}
+                  financeOverview={financeOverview}
                   busy={busy}
                   error={error}
                   memberSearch={memberSearch}
@@ -728,7 +738,12 @@ export default function ClubManagementPage({
 
             {!loadingClub && activeTab === "fees" ? (
               <motion.div key="fees" className="club-tab-content" {...pageMotion}>
-                <FeesTab clubId={clubId} members={members} />
+                <FeesTab
+                  clubId={clubId}
+                  members={members}
+                  overviewData={financeOverview}
+                  onOverviewChange={setFinanceOverview}
+                />
               </motion.div>
             ) : null}
 
@@ -802,24 +817,22 @@ export default function ClubManagementPage({
                 setError={setError}
                 onApprove={(requestId, decisionNote) =>
                   submitNoEvent(async () => {
-                    try {
-                      await apiPatch(`/api/organizations/${clubId}/leave-requests/${requestId}/approve`, { decisionNote });
-                      const updated = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${clubId}/leave-requests`);
-                      setLeaveRequests(updated);
-                    } catch (err) {
-                      console.warn("Leave requests API not available:", err);
-                    }
+                    await apiPatch(`/api/attendance-leave-requests/${requestId}/decision`, {
+                      status: "APPROVED",
+                      decisionNote
+                    });
+                    const updated = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${clubId}/attendance-leave-requests`);
+                    setLeaveRequests(updated);
                   }, setBusy, setError)
                 }
                 onReject={(requestId, decisionNote) =>
                   submitNoEvent(async () => {
-                    try {
-                      await apiPatch(`/api/organizations/${clubId}/leave-requests/${requestId}/reject`, { decisionNote });
-                      const updated = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${clubId}/leave-requests`);
-                      setLeaveRequests(updated);
-                    } catch (err) {
-                      console.warn("Leave requests API not available:", err);
-                    }
+                    await apiPatch(`/api/attendance-leave-requests/${requestId}/decision`, {
+                      status: "REJECTED",
+                      decisionNote
+                    });
+                    const updated = await apiGet<LeaveRequestResponse[]>(`/api/organizations/${clubId}/attendance-leave-requests`);
+                    setLeaveRequests(updated);
                   }, setBusy, setError)
                 }
               />
@@ -876,11 +889,6 @@ export default function ClubManagementPage({
                 status: memberForm.status,
                 student: memberForm.student,
                 attendanceViewEnabled: memberForm.attendanceViewEnabled,
-                tuitionStatus: memberForm.tuitionStatus,
-                tuitionPaidAmount: memberForm.tuitionPaidAmount,
-                otherFeeStatus: memberForm.otherFeeStatus,
-                otherFeePaidAmount: memberForm.otherFeePaidAmount,
-                paymentNote: memberForm.paymentNote || undefined,
                 memberNote: memberForm.memberNote || undefined
               });
               if (result.member) setMembers((current) => [result.member!, ...current]);
@@ -908,11 +916,6 @@ export default function ClubManagementPage({
               joinedAt: today(),
               student: memberForm.student,
               attendanceViewEnabled: memberForm.attendanceViewEnabled,
-              tuitionStatus: memberForm.tuitionStatus,
-              tuitionPaidAmount: memberForm.tuitionPaidAmount,
-              otherFeeStatus: memberForm.otherFeeStatus,
-              otherFeePaidAmount: memberForm.otherFeePaidAmount,
-              paymentNote: memberForm.paymentNote || undefined,
               memberNote: memberForm.memberNote || undefined
             });
             setMembers((current) => [member, ...current]);
@@ -933,7 +936,7 @@ export default function ClubManagementPage({
             const personId = rosterPersonId || rosterCandidates[0]?.personId;
             if (!personId) throw new Error("Không có thành viên phù hợp để thêm vào roster.");
             const athlete = athletes.find((item) => item.personId === personId)
-              || await apiPost<AthleteResponse>("/api/athletes", { personId, primaryOrganizationId: clubId, status: "ACTIVE" });
+              || await apiPost<AthleteResponse>(`/api/organizations/${clubId}/athletes`, { personId, status: "ACTIVE" });
             const rosterItem = await apiPost<ClubRosterResponse>(`/api/organizations/${clubId}/roster`, { athleteId: athlete.id, status: "ACTIVE", joinedAt: today() });
             setRoster((current) => [rosterItem, ...current]);
             setAthletes((current) => current.some((item) => item.id === athlete.id) ? current : [...current, athlete]);
@@ -1263,11 +1266,32 @@ function emptyMemberForm() {
     student: true,
     createAccount: false,
     attendanceViewEnabled: true,
-    tuitionStatus: "PENDING",
-    tuitionPaidAmount: 0,
-    otherFeeStatus: "PENDING",
-    otherFeePaidAmount: 0,
-    paymentNote: "",
     memberNote: ""
   };
+}
+
+function groupFeeAssignmentsByMember(assignments: ClubFeeOverviewResponse["assignments"]) {
+  return assignments.reduce<Record<string, ClubFeeOverviewResponse["assignments"]>>((grouped, assignment) => {
+    grouped[assignment.memberId] = [...(grouped[assignment.memberId] ?? []), assignment];
+    return grouped;
+  }, {});
+}
+
+function memberFinanceStatus(assignments: ClubFeeOverviewResponse["assignments"]) {
+  if (assignments.length === 0) {
+    return null;
+  }
+  if (assignments.some((assignment) => assignment.status === "OVERDUE")) {
+    return "OVERDUE";
+  }
+  if (assignments.some((assignment) => assignment.status === "PARTIAL")) {
+    return "PARTIAL";
+  }
+  const outstanding = assignments.reduce((sum, assignment) => {
+    return sum + Math.max(0, Number(assignment.amountDue || 0) - Number(assignment.paidAmount || 0));
+  }, 0);
+  if (outstanding <= 0) {
+    return assignments.every((assignment) => assignment.status === "WAIVED") ? "WAIVED" : "PAID";
+  }
+  return "PENDING";
 }

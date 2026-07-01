@@ -3,7 +3,7 @@ name: training-attendance
 description: Training session creation, attendance marking, leave request workflow, and auto-schedule generation
 type: feature
 version: "1.0"
-last_updated: "2026-06-11"
+last_updated: "2026-06-30"
 criticality: HIGH
 metadata:
   owner: backend
@@ -24,6 +24,33 @@ related_context_files:
 ---
 
 # Feature: Training Attendance
+
+## 2026-06-30 Updates
+
+These notes supersede any older conflicting text below.
+
+- Leave requests now use a discriminated contract:
+  - `requestType = LEAVE_SESSION | LEAVE_LONG_TERM | LATE`
+  - `sessionId` is required for `LEAVE_SESSION` and `LATE`
+  - `fromDate` + `toDate` are required for `LEAVE_LONG_TERM`
+  - `status = PENDING | APPROVED | REJECTED | EXPIRED_AUTO_ABSENT`
+  - `expiresAt` is returned in `LeaveRequestResponse`
+- Manager-side leave APIs are:
+  - `GET /api/organizations/{orgId}/attendance-leave-requests`
+  - `PATCH /api/attendance-leave-requests/{requestId}/decision`
+- Approved leave now auto-applies attendance:
+  - `LEAVE_SESSION` and `LEAVE_LONG_TERM` upsert `EXCUSED`
+  - `LATE` upsert `LATE`
+  - existing `PRESENT`, `LATE`, and `EXCUSED` records are not overwritten; only missing / `ABSENT` records are replaced
+- Approved long-term leave is now a source of truth for future sessions:
+  - when a manual or scheduled session is created inside the approved date range, the system materializes the attendance record automatically
+  - this is triggered from both `AttendanceServiceImpl` and `ClubTrainingScheduleServiceImpl`
+- Pending leave expiry is automated by `AttendanceLeaveRequestExpiryJob`:
+  - session/late requests expire after `session.scheduledAt`
+  - long-term requests expire after end-of-day `toDate`
+  - expired requests move to `EXPIRED_AUTO_ABSENT` and materialize `ABSENT` where applicable
+- `MemberSelfService.attendance()` now enforces `attendanceViewEnabled`; if the user has no visible membership, the endpoint returns 403 with a domain-specific message.
+- `MemberSelfService.attendance()` also returns a separate `leaveRequests` list so pending/approved long-term requests show up even before any in-range session exists.
 
 ## Actors
 - **Coach / Club Manager** — creates sessions, marks attendance, decides leave requests

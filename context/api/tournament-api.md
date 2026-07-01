@@ -2,8 +2,8 @@
 name: tournament-api
 description: Complete endpoint reference for tournaments, categories, entries, tatamis, matches, and draw
 type: api
-version: "1.0"
-last_updated: "2026-06-11"
+version: "1.1"
+last_updated: "2026-07-01"
 metadata:
   owner: backend
   base_path: /api
@@ -144,6 +144,8 @@ Boolean enableRepechage     // override category.repechageEnabled
 ```
 
 **DrawResponse**: `{ bracketId, bracketSize, entryCount, matches[] }`
+
+`ROUND_ROBIN` is supported for the category draw endpoint as a single group: it creates every pair of active entries once and initializes match participants/Kumite state. For `n` entries it returns `n * (n - 1) / 2` matches. `POOL` is not implemented and returns `400 Bad Request`.
 
 See [draw-brackets.md](../features/draw-brackets.md) for full algorithm.
 

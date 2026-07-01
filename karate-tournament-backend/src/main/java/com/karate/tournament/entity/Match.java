@@ -20,6 +20,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -97,4 +98,13 @@ public class Match extends BaseEntity {
   @Enumerated(EnumType.STRING)
   @Column(name = "loser_next_side", length = 10)
   public Side loserNextSide;
+
+  @Column(name = "team_match_group_id")
+  public UUID teamMatchGroupId;
+
+  @Column(name = "team_bout_order")
+  public Integer teamBoutOrder;
+
+  @Column(name = "team_extra_bout", nullable = false)
+  public boolean teamExtraBout = false;
 }

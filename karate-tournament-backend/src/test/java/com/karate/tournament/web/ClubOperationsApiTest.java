@@ -12,10 +12,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.karate.tournament.auth.AuthenticatedPrincipal;
 import com.karate.tournament.auth.CurrentActor;
 import com.karate.tournament.auth.GlobalAdminCurrentActorProvider;
+import com.karate.tournament.service.AttendanceLeaveRequestService;
 import com.karate.tournament.entity.AppUser;
 import com.karate.tournament.entity.Organization;
 import com.karate.tournament.entity.OrganizationMember;
 import com.karate.tournament.entity.Person;
+import java.time.Instant;
 import com.karate.tournament.entity.enums.ClubMemberRole;
 import com.karate.tournament.entity.enums.ClubMemberStatus;
 import com.karate.tournament.entity.enums.OrganizationType;
@@ -59,6 +61,9 @@ class ClubOperationsApiTest {
 
   @Autowired
   OrganizationMemberRepository members;
+
+  @Autowired
+  AttendanceLeaveRequestService attendanceLeaveRequests;
 
   @Test
   void clubManagerFlowCreatesRosterAttendanceAndDashboardSignals() throws Exception {
@@ -210,6 +215,7 @@ class ClubOperationsApiTest {
       getJson("/api/organizations/" + organization.id + "/members", 403);
 
       JsonNode leave = postJson("/api/me/attendance/leave-requests", Map.of(
+          "requestType", "LEAVE_SESSION",
           "sessionId", session.toString(),
           "reason", "School exam"
       ), 201);
@@ -228,6 +234,275 @@ class ClubOperationsApiTest {
       JsonNode attendance = getJson("/api/me/attendance");
       assertThat(attendance.path("excused").asLong()).isEqualTo(1);
       assertThat(attendance.path("sessionRows").get(0).path("record").path("status").asText()).isEqualTo("EXCUSED");
+    } finally {
+      SecurityContextHolder.clearContext();
+      GlobalAdminCurrentActorProvider.clearTestActor();
+    }
+  }
+
+  @Test
+  void managedClubsReturnsOnlyClubsWithAggregatedOverview() throws Exception {
+    UUID club = id(postJson("/api/organizations", Map.of("name", "Managed Club", "type", "CLUB"), 201));
+    UUID organizer = id(postJson("/api/organizations", Map.of("name", "Not A Club", "type", "ORGANIZER"), 201));
+    UUID person = id(postJson("/api/persons", Map.of("displayName", "Managed Athlete"), 201));
+    UUID athlete = id(postJson("/api/athletes", Map.of(
+        "personId", person.toString(),
+        "primaryOrganizationId", club.toString()
+    ), 201));
+    postJson("/api/organizations/" + club + "/members", Map.of(
+        "personId", person.toString(),
+        "role", "ATHLETE",
+        "status", "ACTIVE"
+    ), 201);
+    postJson("/api/organizations/" + club + "/roster", Map.of(
+        "athleteId", athlete.toString(),
+        "status", "ACTIVE"
+    ), 201);
+    postJson("/api/organizations/" + club + "/attendance-sessions", Map.of(
+        "name", "Managed Session",
+        "scheduledAt", "2026-06-12T11:00:00Z"
+    ), 201);
+
+    JsonNode managed = getJson("/api/organizations/managed-clubs");
+    assertThat(managed).hasSizeGreaterThanOrEqualTo(1);
+    JsonNode clubRow = managedClub(managed, club);
+    assertThat(clubRow.path("club").path("id").asText()).isEqualTo(club.toString());
+    assertThat(clubRow.path("overview").path("activeMembers").asLong()).isEqualTo(1);
+    assertThat(clubRow.path("overview").path("activeAthletes").asLong()).isEqualTo(1);
+    assertThat(clubRow.path("overview").path("attendanceSessions").asLong()).isEqualTo(1);
+    assertThat(managed.findValuesAsText("id")).doesNotContain(organizer.toString());
+  }
+
+  @Test
+  void memberAttendanceRespectsDisabledFlag() throws Exception {
+    Organization organization = Organization.create();
+    organization.name = "Hidden Attendance Club";
+    organization.type = OrganizationType.CLUB;
+    organizations.save(organization);
+
+    Person person = Person.create();
+    person.displayName = "Hidden Member";
+    persons.save(person);
+
+    AppUser user = AppUser.create();
+    user.displayName = "Hidden Member";
+    user.email = "hidden-member@test.local";
+    user.status = "ACTIVE";
+    user.primaryOrganization = organization;
+    users.save(user);
+
+    OrganizationMember member = OrganizationMember.create();
+    member.organization = organization;
+    member.person = person;
+    member.user = user;
+    member.role = ClubMemberRole.ATHLETE;
+    member.status = ClubMemberStatus.ACTIVE;
+    member.attendanceViewEnabled = false;
+    members.save(member);
+
+    runAs(user.id, organization.id, Set.of(SystemRole.MEMBER));
+    try {
+      JsonNode response = getJson("/api/me/attendance", 403);
+      assertThat(response.path("message").asText()).contains("disabled");
+    } finally {
+      SecurityContextHolder.clearContext();
+      GlobalAdminCurrentActorProvider.clearTestActor();
+    }
+  }
+
+  @Test
+  void longTermLeaveAppearsInSummaryAndMaterializesForNewSessions() throws Exception {
+    Organization organization = Organization.create();
+    organization.name = "Long Term Leave Club";
+    organization.type = OrganizationType.CLUB;
+    organizations.save(organization);
+
+    Person person = Person.create();
+    person.displayName = "Long Term Member";
+    persons.save(person);
+
+    AppUser user = AppUser.create();
+    user.displayName = "Long Term Member";
+    user.email = "long-term@test.local";
+    user.status = "ACTIVE";
+    user.primaryOrganization = organization;
+    users.save(user);
+
+    OrganizationMember member = OrganizationMember.create();
+    member.organization = organization;
+    member.person = person;
+    member.user = user;
+    member.role = ClubMemberRole.ATHLETE;
+    member.status = ClubMemberStatus.ACTIVE;
+    members.save(member);
+
+    UUID athlete = id(postJson("/api/organizations/" + organization.id + "/athletes", Map.of(
+        "personId", person.id.toString(),
+        "primaryOrganizationId", organization.id.toString()
+    ), 201));
+    postJson("/api/organizations/" + organization.id + "/roster", Map.of(
+        "athleteId", athlete.toString(),
+        "status", "ACTIVE"
+    ), 201);
+
+    runAs(user.id, organization.id, Set.of(SystemRole.MEMBER));
+    try {
+      JsonNode leave = postJson("/api/me/attendance/leave-requests", Map.of(
+          "requestType", "LEAVE_LONG_TERM",
+          "fromDate", "2026-06-20",
+          "toDate", "2026-06-22",
+          "reason", "Family trip"
+      ), 201);
+      UUID leaveRequestId = UUID.fromString(leave.path("id").asText());
+
+      JsonNode pendingAttendance = getJson("/api/me/attendance");
+      assertThat(pendingAttendance.path("pendingLeaveRequests").asLong()).isEqualTo(1);
+      assertThat(pendingAttendance.path("leaveRequests")).hasSize(1);
+      assertThat(pendingAttendance.path("leaveRequests").get(0).path("requestType").asText()).isEqualTo("LEAVE_LONG_TERM");
+
+      SecurityContextHolder.clearContext();
+      GlobalAdminCurrentActorProvider.clearTestActor();
+      patchJson("/api/attendance-leave-requests/" + leaveRequestId + "/decision", Map.of(
+          "status", "APPROVED",
+          "decisionNote", "Approved for trip"
+      ), 200);
+
+      UUID session = id(postJson("/api/organizations/" + organization.id + "/attendance-sessions", Map.of(
+          "name", "Session During Leave",
+          "scheduledAt", "2026-06-21T10:00:00Z"
+      ), 201));
+
+      runAs(user.id, organization.id, Set.of(SystemRole.MEMBER));
+      JsonNode approvedAttendance = getJson("/api/me/attendance");
+      assertThat(approvedAttendance.path("pendingLeaveRequests").asLong()).isEqualTo(0);
+      assertThat(approvedAttendance.path("excused").asLong()).isEqualTo(1);
+      assertThat(approvedAttendance.path("leaveRequests").get(0).path("status").asText()).isEqualTo("APPROVED");
+      assertThat(sessionRow(approvedAttendance.path("sessionRows"), session).path("record").path("status").asText()).isEqualTo("EXCUSED");
+    } finally {
+      SecurityContextHolder.clearContext();
+      GlobalAdminCurrentActorProvider.clearTestActor();
+    }
+  }
+
+  @Test
+  void lateLeaveApprovalMaterializesLateAttendance() throws Exception {
+    Organization organization = Organization.create();
+    organization.name = "Late Request Club";
+    organization.type = OrganizationType.CLUB;
+    organizations.save(organization);
+
+    Person person = Person.create();
+    person.displayName = "Late Member";
+    persons.save(person);
+
+    AppUser user = AppUser.create();
+    user.displayName = "Late Member";
+    user.email = "late-member@test.local";
+    user.status = "ACTIVE";
+    user.primaryOrganization = organization;
+    users.save(user);
+
+    OrganizationMember member = OrganizationMember.create();
+    member.organization = organization;
+    member.person = person;
+    member.user = user;
+    member.role = ClubMemberRole.ATHLETE;
+    member.status = ClubMemberStatus.ACTIVE;
+    members.save(member);
+
+    UUID athlete = id(postJson("/api/organizations/" + organization.id + "/athletes", Map.of(
+        "personId", person.id.toString(),
+        "primaryOrganizationId", organization.id.toString()
+    ), 201));
+    postJson("/api/organizations/" + organization.id + "/roster", Map.of(
+        "athleteId", athlete.toString(),
+        "status", "ACTIVE"
+    ), 201);
+    UUID session = id(postJson("/api/organizations/" + organization.id + "/attendance-sessions", Map.of(
+        "name", "Late Session",
+        "scheduledAt", "2026-06-16T11:00:00Z"
+    ), 201));
+
+    runAs(user.id, organization.id, Set.of(SystemRole.MEMBER));
+    try {
+      JsonNode leave = postJson("/api/me/attendance/leave-requests", Map.of(
+          "requestType", "LATE",
+          "sessionId", session.toString(),
+          "reason", "Traffic jam"
+      ), 201);
+      UUID leaveRequestId = UUID.fromString(leave.path("id").asText());
+
+      SecurityContextHolder.clearContext();
+      GlobalAdminCurrentActorProvider.clearTestActor();
+      patchJson("/api/attendance-leave-requests/" + leaveRequestId + "/decision", Map.of(
+          "status", "APPROVED",
+          "decisionNote", "Late accepted"
+      ), 200);
+
+      runAs(user.id, organization.id, Set.of(SystemRole.MEMBER));
+      JsonNode attendance = getJson("/api/me/attendance");
+      assertThat(attendance.path("late").asLong()).isEqualTo(1);
+      assertThat(sessionRow(attendance.path("sessionRows"), session).path("record").path("status").asText()).isEqualTo("LATE");
+    } finally {
+      SecurityContextHolder.clearContext();
+      GlobalAdminCurrentActorProvider.clearTestActor();
+    }
+  }
+
+  @Test
+  void expiredLeaveRequestsTurnIntoAutoAbsent() throws Exception {
+    Organization organization = Organization.create();
+    organization.name = "Expiry Club";
+    organization.type = OrganizationType.CLUB;
+    organizations.save(organization);
+
+    Person person = Person.create();
+    person.displayName = "Expiry Member";
+    persons.save(person);
+
+    AppUser user = AppUser.create();
+    user.displayName = "Expiry Member";
+    user.email = "expiry-member@test.local";
+    user.status = "ACTIVE";
+    user.primaryOrganization = organization;
+    users.save(user);
+
+    OrganizationMember member = OrganizationMember.create();
+    member.organization = organization;
+    member.person = person;
+    member.user = user;
+    member.role = ClubMemberRole.ATHLETE;
+    member.status = ClubMemberStatus.ACTIVE;
+    members.save(member);
+
+    UUID athlete = id(postJson("/api/organizations/" + organization.id + "/athletes", Map.of(
+        "personId", person.id.toString(),
+        "primaryOrganizationId", organization.id.toString()
+    ), 201));
+    postJson("/api/organizations/" + organization.id + "/roster", Map.of(
+        "athleteId", athlete.toString(),
+        "status", "ACTIVE"
+    ), 201);
+    UUID session = id(postJson("/api/organizations/" + organization.id + "/attendance-sessions", Map.of(
+        "name", "Past Session",
+        "scheduledAt", Instant.now().minusSeconds(7200).toString()
+    ), 201));
+
+    runAs(user.id, organization.id, Set.of(SystemRole.MEMBER));
+    try {
+      JsonNode leave = postJson("/api/me/attendance/leave-requests", Map.of(
+          "requestType", "LEAVE_SESSION",
+          "sessionId", session.toString(),
+          "reason", "Missed the alarm"
+      ), 201);
+      assertThat(leave.path("status").asText()).isEqualTo("PENDING");
+
+      assertThat(attendanceLeaveRequests.expirePendingRequests()).isEqualTo(1);
+
+      JsonNode attendance = getJson("/api/me/attendance");
+      assertThat(attendance.path("absent").asLong()).isEqualTo(1);
+      assertThat(sessionRow(attendance.path("sessionRows"), session).path("leaveRequest").path("status").asText()).isEqualTo("EXPIRED_AUTO_ABSENT");
+      assertThat(sessionRow(attendance.path("sessionRows"), session).path("record").path("status").asText()).isEqualTo("ABSENT");
     } finally {
       SecurityContextHolder.clearContext();
       GlobalAdminCurrentActorProvider.clearTestActor();
@@ -519,5 +794,23 @@ class ClubOperationsApiTest {
       }
     }
     throw new AssertionError("Missing fee item kind " + kind);
+  }
+
+  private JsonNode managedClub(JsonNode clubs, UUID clubId) {
+    for (JsonNode club : clubs) {
+      if (club.path("club").path("id").asText().equals(clubId.toString())) {
+        return club;
+      }
+    }
+    throw new AssertionError("Missing managed club " + clubId);
+  }
+
+  private JsonNode sessionRow(JsonNode rows, UUID sessionId) {
+    for (JsonNode row : rows) {
+      if (row.path("id").asText().equals(sessionId.toString())) {
+        return row;
+      }
+    }
+    throw new AssertionError("Missing session row " + sessionId);
   }
 }
