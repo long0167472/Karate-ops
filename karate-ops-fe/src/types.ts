@@ -524,6 +524,38 @@ export interface LeaveRequestResponse {
   expiresAt?: string;
 }
 
+export interface ClubAnnouncementResponse {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  title: string;
+  content: string;
+  pinned: boolean;
+  createdByUserId?: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TournamentJoinRequestResponse {
+  id: string;
+  tournamentId: string;
+  tournamentName: string;
+  tournamentStartsOn?: string;
+  tournamentStatus?: string;
+  organizationId: string;
+  organizationName: string;
+  memberId: string;
+  memberName?: string;
+  requesterUserId?: string;
+  decidedByUserId?: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  note?: string;
+  decisionNote?: string;
+  decidedAt?: string;
+  createdAt: string;
+}
+
 export interface MemberClubProfileResponse {
   memberships: ClubMemberResponse[];
 }
