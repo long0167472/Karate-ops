@@ -202,19 +202,23 @@ public class ApiMapper {
     Person person = request.member.person;
     return new LeaveRequestResponse(
         request.id,
-        request.session.id,
-        request.session.name,
-        request.session.organization.id,
-        request.session.organization.name,
+        request.session == null ? null : request.session.id,
+        request.session == null ? null : request.session.name,
+        request.member.organization.id,
+        request.member.organization.name,
         request.member.id,
         person == null ? request.member.user == null ? null : request.member.user.displayName : person.displayName,
         request.requesterUser == null ? null : request.requesterUser.id,
         request.decidedByUser == null ? null : request.decidedByUser.id,
+        request.requestType,
         request.status,
         request.reason,
+        request.fromDate,
+        request.toDate,
         request.decisionNote,
         request.decidedAt,
-        request.createdAt
+        request.createdAt,
+        request.expiresAt
     );
   }
 
@@ -439,7 +443,56 @@ public class ApiMapper {
         state.durationMs,
         state.remainingMs,
         state.timerRunning,
-        state.timerStartedAt
+        state.timerStartedAt,
+        new KumiteStateResponse.KumiteDecisionResponse(
+            state.decisionWinnerSide,
+            state.decisionWinType,
+            state.decisionReasonCode,
+            state.decisionReasonText,
+            state.decisionFrozen,
+            state.decisionConfirmable
+        ),
+        new KumiteStateResponse.KumiteSenshuResponse(
+            state.senshuHolder,
+            state.senshuAwardedAt,
+            state.senshuRevoked,
+            state.senshuRevokedAt,
+            state.senshuRevocationReasonCode
+        ),
+        new KumiteStateResponse.KumitePenaltyStateResponse(
+            new KumiteStateResponse.SidePenaltyResponse(
+                state.akaPenaltyLevel,
+                state.akaPenaltyReasonCode,
+                state.akaCategory1Penalty,
+                state.akaCategory2Penalty,
+                state.akaHansoku,
+                state.akaShikkaku,
+                state.akaKiken
+            ),
+            new KumiteStateResponse.SidePenaltyResponse(
+                state.aoPenaltyLevel,
+                state.aoPenaltyReasonCode,
+                state.aoCategory1Penalty,
+                state.aoCategory2Penalty,
+                state.aoHansoku,
+                state.aoShikkaku,
+                state.aoKiken
+            )
+        ),
+        new KumiteStateResponse.VideoReviewStateResponse(
+            state.videoReviewActiveSide,
+            state.videoReviewStatus,
+            state.akaVideoReviewCardAvailable,
+            state.aoVideoReviewCardAvailable,
+            state.videoReviewLastResolution
+        ),
+        new KumiteStateResponse.MedicalStateResponse(
+            state.medicalInjuredSide,
+            state.medicalStartedAt,
+            state.medicalDeadlineAt,
+            state.medicalStatus,
+            state.medicalLastOutcome
+        )
     );
   }
 
@@ -456,6 +509,7 @@ public class ApiMapper {
         event.penaltyCode,
         event.judgeNumber,
         event.voteSide,
+        event.payloadJson,
         event.occurredAt
     );
   }

@@ -48,8 +48,10 @@ import { TournamentPublicDetailPage } from "./TournamentPublicDetailPage";
 import TournamentStandingsPage from "./TournamentStandingsPage";
 import { DisplayView, OverlayView, ScoreboardFrame as SpectatorScoreboard } from "./scoreboard";
 import { AuthenticatedShell } from "./components/AuthenticatedShell";
+import { LEAVE_REQUEST_STATUS_LABELS, LEAVE_REQUEST_TYPE_LABELS } from "./features/clubs/clubConstants";
+import { LeaveRequestForm, type LeaveRequestFormData } from "./features/clubs/components/LeaveRequestForm";
 import "./tournament-styles.css";
-import { apiDelete, apiGet, apiPatch, apiPost, getAuthToken, setAuthToken } from "./apiClient";
+import { ApiClientError, apiDelete, apiGet, apiPatch, apiPost, getAuthToken, setAuthToken } from "./apiClient";
 import { canManageClub as shellCanManageClub } from "./authNavigation";
 import { useScoreboard } from "./useScoreboard";
 import type {
@@ -66,6 +68,7 @@ import type {
   DeviceRecord,
   EntryResponse,
   EventRecord,
+  LeaveRequestResponse,
   MatchResponse,
   MatchState,
   MedalTableRow,
@@ -93,6 +96,17 @@ const POINTS = [
   { points: 2, label: "Waza-ari" },
   { points: 3, label: "Ippon" }
 ];
+const PENALTY_LEVELS = ["NONE", "CHUI_1", "CHUI_2", "CHUI_3", "HANSOKU_CHUI", "HANSOKU"] as const;
+const PENALTY_REASONS = [
+  "JOGAI",
+  "MUBOBI",
+  "PASSIVITY",
+  "AVOIDING_COMBAT",
+  "EXCESSIVE_CONTACT",
+  "GRABBING",
+  "WAKARETE_VIOLATION",
+  "REFEREE_ORDER_VIOLATION"
+] as const;
 const PREVIEW_FLOAT_KEY = "karate-ops.floatingPreviewRect";
 const PREVIEW_VISIBLE_KEY = "karate-ops.previewVisible";
 const PREVIEW_PINNED_KEY = "karate-ops.previewPinned";
@@ -268,10 +282,24 @@ function createManualPayload(role: string): StatePayload {
       kumite: {
         hantei: false,
         lastPoint: null,
-        suggestion: null,
+        decision: null,
+        senshuState: {
+          holderSide: null,
+          awardedAt: null,
+          revoked: false,
+          revokedAt: null,
+          revocationReasonCode: null
+        },
         vr: {
           aka: { card: true, active: false, result: "ready" },
           ao: { card: true, active: false, result: "ready" }
+        },
+        medical: {
+          injuredSide: null,
+          startedAt: null,
+          deadlineAt: null,
+          active: false,
+          lastOutcome: null
         }
       },
       kata: {
@@ -311,7 +339,17 @@ function createManualCompetitor(name: string, club: string, bib: string): Compet
     kataNo: "-",
     score: 0,
     senshu: false,
-    penalties: { chui: 0, hansokuChui: false, hansoku: false, shikkaku: false, kiken: false }
+    penalties: {
+      chui: 0,
+      hansokuChui: false,
+      penaltyLevel: "NONE",
+      reasonCode: null,
+      category1Level: "NONE",
+      category2Level: "NONE",
+      hansoku: false,
+      shikkaku: false,
+      kiken: false
+    }
   };
 }
 
@@ -325,11 +363,52 @@ function applyManualAction(current: StatePayload, action: ScoreboardAction): Sta
     const points = Number(payload.points || 0);
     match.competitors[side].score = Math.max(0, match.competitors[side].score + points);
     if (points > 0) {
+      if (!match.kumite.senshuState.holderSide) {
+        match.competitors.aka.senshu = side === "aka";
+        match.competitors.ao.senshu = side === "ao";
+        match.kumite.senshuState = {
+          holderSide: side,
+          awardedAt: now,
+          revoked: false,
+          revokedAt: null,
+          revocationReasonCode: null
+        };
+      }
       match.kumite.lastPoint = {
         id: `manual-point-${now}`,
         side,
         points,
         label: String(payload.label || "Point"),
+        at: now
+      };
+    }
+  }
+
+  if (action.type === "SCORE_EXCHANGE") {
+    const akaPoints = Number(payload.akaPoints || 0);
+    const aoPoints = Number(payload.aoPoints || 0);
+    match.competitors.aka.score = Math.max(0, match.competitors.aka.score + akaPoints);
+    match.competitors.ao.score = Math.max(0, match.competitors.ao.score + aoPoints);
+    const akaPositive = akaPoints > 0;
+    const aoPositive = aoPoints > 0;
+    if (akaPositive !== aoPositive && !match.kumite.senshuState.holderSide) {
+      const holderSide = akaPositive ? "aka" : "ao";
+      match.competitors.aka.senshu = holderSide === "aka";
+      match.competitors.ao.senshu = holderSide === "ao";
+      match.kumite.senshuState = {
+        holderSide,
+        awardedAt: now,
+        revoked: false,
+        revokedAt: null,
+        revocationReasonCode: null
+      };
+    }
+    if (akaPositive || aoPositive) {
+      match.kumite.lastPoint = {
+        id: `manual-exchange-${now}`,
+        side: akaPositive ? "aka" : "ao",
+        points: akaPositive ? akaPoints : aoPoints,
+        label: "Exchange",
         at: now
       };
     }
@@ -370,33 +449,127 @@ function applyManualAction(current: StatePayload, action: ScoreboardAction): Sta
     match.timer.startedAt = null;
   }
 
-  if (action.type === "SET_SENSHU") {
-    const value = Boolean(payload.value);
-    match.competitors.aka.senshu = side === "aka" ? value : false;
-    match.competitors.ao.senshu = side === "ao" ? value : false;
+  if (action.type === "PENALTY_LEVEL") {
+    const level = String(payload.level || "NONE");
+    match.competitors[side].penalties.penaltyLevel = level as Competitor["penalties"]["penaltyLevel"];
+    match.competitors[side].penalties.reasonCode = String(payload.reasonCode || "") as Competitor["penalties"]["reasonCode"];
+    match.competitors[side].penalties.category1Level = level as Competitor["penalties"]["category1Level"];
+    match.competitors[side].penalties.category2Level = "NONE";
+    match.competitors[side].penalties.hansoku = level === "HANSOKU";
+    match.competitors[side].penalties.hansokuChui = level === "HANSOKU_CHUI" || level === "HANSOKU";
+    match.competitors[side].penalties.chui = level === "NONE" ? 0 : level === "CHUI_1" ? 1 : level === "CHUI_2" ? 2 : 3;
   }
 
-  if (action.type === "SET_CHUI") {
-    match.competitors[side].penalties.chui = clampNumber(Number(payload.value || 0), 0, 3);
-  }
-
-  if (action.type === "TOGGLE_PENALTY") {
-    const penalty = String(payload.penalty || "");
-    const value = Boolean(payload.value);
-    if (penalty === "hansokuChui") {
-      match.competitors[side].penalties.hansokuChui = value;
-    } else if (penalty === "hansoku") {
-      match.competitors[side].penalties.hansoku = value;
-    } else if (penalty === "shikkaku") {
-      match.competitors[side].penalties.shikkaku = value;
-    } else if (penalty === "kiken") {
-      match.competitors[side].penalties.kiken = value;
+  if (action.type === "DIRECT_PENALTY") {
+    const reasonCode = String(payload.reasonCode || "");
+    if (reasonCode === "SHIKKAKU") {
+      match.competitors[side].penalties.shikkaku = true;
+    } else if (reasonCode === "KIKEN") {
+      match.competitors[side].penalties.kiken = true;
     }
   }
 
-  if (action.type === "SET_HANTEI") {
-    match.kumite.hantei = Boolean(payload.value);
-    match.status = match.kumite.hantei ? "hantei" : "paused";
+  if (action.type === "SENSHU_REVOKE") {
+    match.competitors.aka.senshu = false;
+    match.competitors.ao.senshu = false;
+    match.kumite.senshuState = {
+      ...match.kumite.senshuState,
+      holderSide: null,
+      revoked: true,
+      revokedAt: now,
+      revocationReasonCode: String(payload.reasonCode || "MANUAL_REVOKE")
+    };
+  }
+
+  if (action.type === "HANTEI_DECISION") {
+    match.kumite.hantei = false;
+    match.kumite.decision = {
+      side,
+      winType: "HANTEI",
+      reasonCode: "HANTEI_DECISION",
+      reasonText: "Referee decision recorded",
+      frozen: true,
+      confirmable: true
+    };
+    match.status = "result_pending_confirmation";
+  }
+
+  if (action.type === "RESUME_REVIEW") {
+    match.kumite.decision = null;
+    match.kumite.hantei = false;
+    match.status = "review";
+  }
+
+  if (action.type === "VR_REQUEST") {
+    match.kumite.vr.aka.active = side === "aka";
+    match.kumite.vr.ao.active = side === "ao";
+    match.kumite.vr.aka.result = side === "aka" ? "active" : match.kumite.vr.aka.result;
+    match.kumite.vr.ao.result = side === "ao" ? "active" : match.kumite.vr.ao.result;
+    match.status = "review";
+  }
+
+  if (action.type === "VR_RESOLVE") {
+    const resolution = String(payload.resolution || "");
+    const resolutionSide = payload.side === "ao" ? "ao" : "aka";
+    if (resolution === "DENIED") {
+      match.kumite.vr[resolutionSide].card = false;
+      match.kumite.vr[resolutionSide].result = "denied";
+    } else if (resolution === "MIENAI" || resolution === "TECHNICAL_PROBLEM") {
+      match.kumite.vr[resolutionSide].result = "inconclusive";
+    } else {
+      match.kumite.vr[resolutionSide].result = "accepted";
+      if (resolution === "AWARD_SCORE") {
+        const points = clampNumber(Number(payload.points || 0), 1, 3);
+        match.competitors[resolutionSide].score += points;
+      }
+      if (resolution === "TORIMASEN") {
+        const points = clampNumber(Number(payload.points || 0), 1, 3);
+        match.competitors[resolutionSide].score = Math.max(0, match.competitors[resolutionSide].score - points);
+      }
+      if (resolution === "REVOKE_SENSHU") {
+        match.competitors.aka.senshu = false;
+        match.competitors.ao.senshu = false;
+        match.kumite.senshuState.holderSide = null;
+      }
+    }
+    match.kumite.vr.aka.active = false;
+    match.kumite.vr.ao.active = false;
+    match.status = "paused";
+  }
+
+  if (action.type === "MEDICAL_START") {
+    match.kumite.medical = {
+      injuredSide: side,
+      startedAt: now,
+      deadlineAt: now + 10_000,
+      active: true,
+      lastOutcome: null
+    };
+    match.status = "review";
+  }
+
+  if (action.type === "MEDICAL_RESOLVE") {
+    const outcome = String(payload.outcome || "CANCELLED");
+    match.kumite.medical = {
+      ...match.kumite.medical,
+      active: false,
+      lastOutcome: outcome
+    };
+    if (outcome === "UNFIT_TEN_SECOND_RULE") {
+      const injuredSide = match.kumite.medical.injuredSide || side;
+      const winnerSide = injuredSide === "aka" ? "ao" : "aka";
+      match.kumite.decision = {
+        side: winnerSide,
+        winType: "TEN_SECOND_RULE",
+        reasonCode: "TEN_SECOND_RULE",
+        reasonText: "10 second rule",
+        frozen: true,
+        confirmable: true
+      };
+      match.status = "result_pending_confirmation";
+    } else {
+      match.status = "paused";
+    }
   }
 
   if (action.type === "WINNER_CONFIRM" || action.type === "KATA_CONFIRM_WINNER") {
@@ -446,7 +619,10 @@ function cloneManualMatch(match: MatchState): MatchState {
     kumite: {
       ...match.kumite,
       lastPoint: match.kumite.lastPoint ? { ...match.kumite.lastPoint } : null,
-      vr: { aka: { ...match.kumite.vr.aka }, ao: { ...match.kumite.vr.ao } }
+      decision: match.kumite.decision ? { ...match.kumite.decision } : null,
+      senshuState: { ...match.kumite.senshuState },
+      vr: { aka: { ...match.kumite.vr.aka }, ao: { ...match.kumite.vr.ao } },
+      medical: { ...match.kumite.medical }
     },
     kata: {
       ...match.kata,
@@ -697,40 +873,48 @@ function MemberPortalPage({
   const [profile, setProfile] = useState<MemberClubProfileResponse | null>(null);
   const [fees, setFees] = useState<MemberFeeSummaryResponse | null>(null);
   const [attendance, setAttendance] = useState<MemberAttendanceSummaryResponse | null>(null);
-  const [leaveReasonBySession, setLeaveReasonBySession] = useState<Record<string, string>>({});
+  const [attendanceAccessDisabled, setAttendanceAccessDisabled] = useState(false);
+  const [leaveFormKey, setLeaveFormKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
+    setAttendanceAccessDisabled(false);
     const [nextProfile, nextFees, nextAttendance] = await Promise.all([
       apiGet<MemberClubProfileResponse>("/api/me/club-profile"),
       apiGet<MemberFeeSummaryResponse>("/api/me/fees"),
       apiGet<MemberAttendanceSummaryResponse>("/api/me/attendance")
+        .then((data) => ({ ok: true as const, data }))
+        .catch((reason: unknown) => ({ ok: false as const, reason }))
     ]);
     setProfile(nextProfile);
     setFees(nextFees);
-    setAttendance(nextAttendance);
+    if (!nextAttendance.ok) {
+      if (nextAttendance.reason instanceof ApiClientError && nextAttendance.reason.status === 403) {
+        setAttendance(null);
+        setAttendanceAccessDisabled(true);
+        return;
+      }
+      throw nextAttendance.reason;
+    }
+    setAttendance(nextAttendance.data);
   }, []);
 
   useEffect(() => {
     load().catch((err) => setError(errorMessage(err)));
   }, [load]);
 
-  async function requestLeave(sessionId: string) {
-    const reason = leaveReasonBySession[sessionId]?.trim();
-    if (!reason) {
-      setError("Nhập lý do xin nghỉ trước khi gửi.");
-      return;
-    }
+  async function requestLeave(data: LeaveRequestFormData) {
     setBusy(true);
-    setError(null);
+    setLeaveError(null);
     try {
-      await apiPost("/api/me/attendance/leave-requests", { sessionId, reason });
-      setLeaveReasonBySession((current) => ({ ...current, [sessionId]: "" }));
+      await apiPost<LeaveRequestResponse>("/api/me/attendance/leave-requests", data);
+      setLeaveFormKey((current) => current + 1);
       await load();
     } catch (err) {
-      setError(errorMessage(err));
+      setLeaveError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -740,6 +924,7 @@ function MemberPortalPage({
   const memberships = profile?.memberships ?? [];
   const feeRows = fees?.assignments ?? [];
   const attendanceRows = attendance?.sessionRows ?? [];
+  const leaveRows = attendance?.leaveRequests ?? [];
   const nextSession = attendanceRows[0];
   const pendingFeeRows = feeRows.filter((row) => Number(row.amountDue) - Number(row.paidAmount) > 0);
 
@@ -770,11 +955,11 @@ function MemberPortalPage({
         </div>
         <div className="auth-metric-card compact">
           <span>Buổi đã ghi nhận</span>
-          <strong>{attendance?.sessions ?? 0}</strong>
+          <strong>{attendanceAccessDisabled ? "Ẩn" : attendance?.sessions ?? 0}</strong>
         </div>
         <div className="auth-metric-card compact">
           <span>Yêu cầu chờ duyệt</span>
-          <strong>{attendance?.pendingLeaveRequests ?? 0}</strong>
+          <strong>{attendanceAccessDisabled ? "Ẩn" : attendance?.pendingLeaveRequests ?? 0}</strong>
         </div>
       </section>
 
@@ -861,30 +1046,46 @@ function MemberPortalPage({
               <h2>Lịch tập và xin nghỉ</h2>
             </div>
           </div>
-          <div className="auth-list-block attendance">
-            {attendanceRows.length === 0 ? <MemberEmpty text="Chưa có buổi tập nào để hiển thị." /> : attendanceRows.map((session) => {
-              const leave = session.leaveRequest;
-              return (
-                <div className="auth-list-row member-attendance-line" key={session.id}>
-                  <div>
-                    <strong>{session.name}</strong>
-                    <span>{session.organizationName} · {session.scheduledDate || session.scheduledAt?.slice(0, 10) || "chưa xếp lịch"}</span>
-                    <small>Điểm danh: {session.record?.status || "Chưa ghi nhận"}{leave ? ` · Xin nghỉ: ${leave.status}` : ""}</small>
-                  </div>
-                  {!leave ? (
-                    <div className="member-leave-box">
-                      <input
-                        value={leaveReasonBySession[session.id] || ""}
-                        onChange={(event) => setLeaveReasonBySession((current) => ({ ...current, [session.id]: event.target.value }))}
-                        placeholder="Lý do xin nghỉ"
-                      />
-                      <button disabled={busy} onClick={() => requestLeave(session.id)}>Gửi</button>
+          {attendanceAccessDisabled ? <MemberEmpty text="CLB đã tắt quyền xem chuyên cần." /> : (
+            <>
+              <div className="auth-list-block">
+                <LeaveRequestForm
+                  key={leaveFormKey}
+                  busy={busy}
+                  error={leaveError}
+                  sessions={attendanceRows}
+                  onSubmit={requestLeave}
+                />
+              </div>
+              <div className="auth-list-block">
+                {leaveRows.length === 0 ? <MemberEmpty text="Chưa có yêu cầu nghỉ hoặc báo muộn nào." /> : leaveRows.slice(0, 4).map((leave) => (
+                  <div className="auth-list-row" key={leave.id}>
+                    <div>
+                      <strong>{LEAVE_REQUEST_TYPE_LABELS[leave.requestType]}</strong>
+                      <span>{leaveRequestScope(leave)}</span>
+                      <small>{leave.reason}</small>
                     </div>
-                  ) : <small className="member-leave-status">{leave.reason}</small>}
-                </div>
-              );
-            })}
-          </div>
+                    <b>{LEAVE_REQUEST_STATUS_LABELS[leave.status]}</b>
+                  </div>
+                ))}
+              </div>
+              <div className="auth-list-block attendance">
+                {attendanceRows.length === 0 ? <MemberEmpty text="Chưa có buổi tập nào để hiển thị." /> : attendanceRows.map((session) => {
+                  const leave = session.leaveRequest;
+                  return (
+                    <div className="auth-list-row member-attendance-line" key={session.id}>
+                      <div>
+                        <strong>{session.name}</strong>
+                        <span>{session.organizationName} · {session.scheduledDate || session.scheduledAt?.slice(0, 10) || "chưa xếp lịch"}</span>
+                        <small>Điểm danh: {session.record?.status || "Chưa ghi nhận"}{leave ? ` · Xin nghỉ: ${leave.status}` : ""}</small>
+                      </div>
+                      {leave ? <small className="member-leave-status">{leave.reason}</small> : <small className="member-leave-status">Chưa có yêu cầu cho buổi này.</small>}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </article>
       </section>
     </AuthenticatedShell>
@@ -893,6 +1094,16 @@ function MemberPortalPage({
 
 function MemberEmpty({ text }: { text: string }) {
   return <p className="member-empty">{text}</p>;
+}
+
+function leaveRequestScope(leave: LeaveRequestResponse) {
+  if (leave.sessionName) {
+    return `${leave.sessionName} · ${LEAVE_REQUEST_STATUS_LABELS[leave.status]}`;
+  }
+  if (leave.fromDate && leave.toDate) {
+    return `${leave.fromDate} → ${leave.toDate} · ${LEAVE_REQUEST_STATUS_LABELS[leave.status]}`;
+  }
+  return LEAVE_REQUEST_STATUS_LABELS[leave.status];
 }
 
 function LoginPage({ onAuth }: { onAuth: (user: AuthUserResponse) => void }) {
@@ -2231,7 +2442,7 @@ function KumiteBoard({ payload, variant }: { payload: StatePayload; variant: "di
   const now = useNow(120);
   const remaining = liveRemaining(match.timer, payload.receivedAt, now);
   const warning = remaining > 0 && remaining <= 15000;
-  const suggestion = match.kumite.suggestion;
+  const decision = match.kumite.decision;
   return (
     <>
       <BoardHeader match={match} />
@@ -2243,7 +2454,8 @@ function KumiteBoard({ payload, variant }: { payload: StatePayload; variant: "di
           warning={warning}
           senshu={match.competitors.aka.senshu ? "aka" : match.competitors.ao.senshu ? "ao" : null}
           vrText={vrSummary(match)}
-          suggestion={suggestion ? winnerText(suggestion.side, suggestion.reason) : null}
+          decisionText={decision ? winnerText(decision.side, decision.reasonText || decision.winType || undefined) : null}
+          medicalText={medicalSummary(match, now)}
         />
         <AthletePanel side="ao" competitor={match.competitors.ao} point={match.kumite.lastPoint} variant={variant} />
       </div>
@@ -2371,14 +2583,16 @@ function CenterStack({
   warning,
   senshu,
   vrText,
-  suggestion
+  decisionText,
+  medicalText
 }: {
   status: string;
   timer: string;
   warning: boolean;
   senshu: Side | null;
   vrText: string | null;
-  suggestion: string | null;
+  decisionText: string | null;
+  medicalText: string | null;
 }) {
   return (
     <div className="center-stack">
@@ -2388,8 +2602,9 @@ function CenterStack({
       <div className="center-tags">
         {senshu ? <span className={cx("small-chip", senshu)}>Senshu {sideLabel(senshu)}</span> : <span className="small-chip muted">No Senshu</span>}
         {vrText ? <span className="small-chip gold">{vrText}</span> : null}
+        {medicalText ? <span className="small-chip gold">{medicalText}</span> : null}
       </div>
-      {suggestion ? <div className="suggestion-chip">{suggestion}</div> : null}
+      {decisionText ? <div className="suggestion-chip">{decisionText}</div> : null}
     </div>
   );
 }
@@ -2399,8 +2614,8 @@ function PenaltyStrip({ side, competitor }: { side: Side; competitor: Competitor
   return (
     <div className={cx("penalty-strip", side)}>
       <span>{sideLabel(side)}</span>
-      {[1, 2, 3].map((level) => <b key={level} className={cx(p.chui >= level && "active")}>C{level}</b>)}
-      <b className={cx(p.hansokuChui && "active")}>HC</b>
+      <b className={cx(p.penaltyLevel !== "NONE" && "active")}>{penaltyLevelShort(p.penaltyLevel)}</b>
+      <b className={cx(p.reasonCode && "active")}>{p.reasonCode ? penaltyReasonShort(p.reasonCode) : "No reason"}</b>
       <b className={cx((p.hansoku || p.shikkaku || p.kiken) && "danger")}>DQ</b>
     </div>
   );
@@ -2693,6 +2908,10 @@ function ModeSwitch({ match }: { match: MatchState }) {
 function SideControl({ side, match, send, manual }: { side: Side; match: MatchState; send: SendAction; manual?: boolean }) {
   const competitor = match.competitors[side];
   const penalties = competitor.penalties;
+  const [penaltyReason, setPenaltyReason] = useState<(typeof PENALTY_REASONS)[number]>("JOGAI");
+  const liveBlocked = isLiveActionBlocked(match);
+  const reviewActive = match.kumite.vr[side].active;
+  const confirmableWinner = match.kumite.decision?.confirmable ? match.kumite.decision.side : null;
   const field = (label: string, value: string, key: "name" | "club" | "bib" | "kataName") => manual
     ? <CommitInput label={label} value={value} onCommit={(next) => send({ type: "MANUAL_SET_COMPETITOR", payload: { side, field: key, value: next } })} />
     : <ReadOnlyField label={label} value={value} />;
@@ -2718,6 +2937,7 @@ function SideControl({ side, match, send, manual }: { side: Side; match: MatchSt
               <button
                 key={point.points}
                 className={cx("large-action", side)}
+                disabled={liveBlocked}
                 onClick={() => send({ type: "SCORE_DELTA", payload: { side, points: point.points, label: point.label } })}
               >
                 <Award />
@@ -2731,6 +2951,7 @@ function SideControl({ side, match, send, manual }: { side: Side; match: MatchSt
               <button
                 key={point.points}
                 className="secondary-button"
+                disabled={liveBlocked}
                 onClick={() => send({ type: "SCORE_DELTA", payload: { side, points: -point.points, label: `Undo ${point.label}` } })}
               >
                 -{point.points}
@@ -2740,39 +2961,79 @@ function SideControl({ side, match, send, manual }: { side: Side; match: MatchSt
           <div className="two-grid">
             <button
               className={cx("secondary-button", competitor.senshu && "active")}
-              onClick={() => send({ type: "SET_SENSHU", payload: { side, value: !competitor.senshu } })}
+              disabled={liveBlocked || !competitor.senshu}
+              onClick={() => send({ type: "SENSHU_REVOKE", payload: { side, reasonCode: "MANUAL_REVIEW" } })}
             >
-              <Flag /> Senshu
+              <Flag /> Revoke Senshu
             </button>
-            <button className="secondary-button" disabled title="Clear Senshu is not supported by backend v1">Clear Senshu</button>
+            <button className="secondary-button" disabled={!reviewActive} onClick={() => send({ type: "VR_RESOLVE", payload: { resolution: "REVOKE_SENSHU", side, reasonCode: "SENSHU_REVIEW" } })}>
+              VR Revoke
+            </button>
           </div>
           <div className="control-block">
-            <label>Chui</label>
+            <label>Penalty reason</label>
+            <select value={penaltyReason} onChange={(event) => setPenaltyReason(event.target.value as (typeof PENALTY_REASONS)[number])}>
+              {PENALTY_REASONS.map((reason) => (
+                <option key={reason} value={reason}>{reason.replace(/_/g, " ")}</option>
+              ))}
+            </select>
+          </div>
+          <div className="control-block">
+            <label>WKF 2026 penalty ladder</label>
             <div className="segmented full">
-              {[0, 1, 2, 3].map((value) => (
-                <button key={value} className={cx(penalties.chui === value && "active")} onClick={() => send({ type: "SET_CHUI", payload: { side, value } })}>
-                  {value}
+              {PENALTY_LEVELS.map((value) => (
+                <button
+                  key={value}
+                  className={cx(penalties.penaltyLevel === value && "active")}
+                  disabled={liveBlocked}
+                  onClick={() => send({ type: "PENALTY_LEVEL", payload: { side, level: value, reasonCode: penaltyReason } })}
+                >
+                  {penaltyLevelShort(value)}
                 </button>
               ))}
             </div>
           </div>
           <div className="two-grid">
-            <ToggleButton active={penalties.hansokuChui} label="Hansoku Chui" onClick={() => send({ type: "TOGGLE_PENALTY", payload: { side, penalty: "hansokuChui", value: !penalties.hansokuChui } })} />
-            <ToggleButton active={penalties.hansoku} danger label="Hansoku" onClick={() => confirmAction("Confirm Hansoku?", () => send({ type: "TOGGLE_PENALTY", payload: { side, penalty: "hansoku", value: !penalties.hansoku } }))} />
-            <ToggleButton active={penalties.shikkaku} danger label="Shikkaku" onClick={() => confirmAction("Confirm Shikkaku?", () => send({ type: "TOGGLE_PENALTY", payload: { side, penalty: "shikkaku", value: !penalties.shikkaku } }))} />
-            <ToggleButton active={penalties.kiken} danger label="Kiken" onClick={() => confirmAction("Confirm Kiken?", () => send({ type: "TOGGLE_PENALTY", payload: { side, penalty: "kiken", value: !penalties.kiken } }))} />
+            <button className={cx("secondary-button", penalties.shikkaku && "danger")} disabled={liveBlocked} onClick={() => confirmAction("Confirm Shikkaku?", () => send({ type: "DIRECT_PENALTY", payload: { side, reasonCode: "SHIKKAKU" } }))}>
+              Shikkaku
+            </button>
+            <button className={cx("secondary-button", penalties.kiken && "danger")} disabled={liveBlocked} onClick={() => confirmAction("Confirm Kiken?", () => send({ type: "DIRECT_PENALTY", payload: { side, reasonCode: "KIKEN" } }))}>
+              Kiken
+            </button>
           </div>
           <div className="control-block">
             <label>Video review</label>
             <div className="mini-grid">
-              <button className="secondary-button" disabled title="VR state is not supported by backend v1">VR</button>
-              <button className="secondary-button success" disabled title="VR state is not supported by backend v1">Accept</button>
-              <button className="secondary-button danger" disabled title="VR state is not supported by backend v1">Deny</button>
+              <button className="secondary-button" disabled={liveBlocked || !match.kumite.vr[side].card || anyVideoReviewActive(match)} onClick={() => send({ type: "VR_REQUEST", payload: { side } })}>VR</button>
+              <button className="secondary-button success" disabled={!reviewActive} onClick={() => send({ type: "VR_RESOLVE", payload: { resolution: "AWARD_SCORE", side, points: 1, reasonCode: "VALID_SCORE" } })}>+1</button>
+              <button className="secondary-button success" disabled={!reviewActive} onClick={() => send({ type: "VR_RESOLVE", payload: { resolution: "AWARD_SCORE", side, points: 2, reasonCode: "VALID_SCORE" } })}>+2</button>
+              <button className="secondary-button success" disabled={!reviewActive} onClick={() => send({ type: "VR_RESOLVE", payload: { resolution: "AWARD_SCORE", side, points: 3, reasonCode: "VALID_SCORE" } })}>+3</button>
+              <button className="secondary-button" disabled={!reviewActive} onClick={() => send({ type: "VR_RESOLVE", payload: { resolution: "TORIMASEN", side, points: match.kumite.lastPoint?.points || 1, reasonCode: "SCORE_CANCELLED" } })}>Torimasen</button>
+              <button className="secondary-button" disabled={!reviewActive} onClick={() => send({ type: "VR_RESOLVE", payload: { resolution: "MIENAI", side, reasonCode: "MIENAI" } })}>Mienai</button>
+              <button className="secondary-button" disabled={!reviewActive} onClick={() => send({ type: "VR_RESOLVE", payload: { resolution: "TECHNICAL_PROBLEM", side, reasonCode: "TECHNICAL_PROBLEM" } })}>Tech</button>
+              <button className="secondary-button danger" disabled={!reviewActive} onClick={() => send({ type: "VR_RESOLVE", payload: { resolution: "DENIED", side, reasonCode: "NO_SCORE" } })}>Deny</button>
+              <button className="secondary-button danger" disabled={!reviewActive} onClick={() => send({ type: "VR_RESOLVE", payload: { resolution: "DENIED", side, reasonCode: "AFTER_WAKARETE", reasonText: "Technique occurred after WAKARETE" } })}>After WAK</button>
+            </div>
+          </div>
+          <div className="control-block">
+            <label>Medical 10s</label>
+            <div className="mini-grid">
+              <button className="secondary-button" disabled={liveBlocked || match.kumite.medical.active} onClick={() => send({ type: "MEDICAL_START", payload: { side } })}>Start</button>
+              <button className="secondary-button success" disabled={!match.kumite.medical.active || match.kumite.medical.injuredSide !== side} onClick={() => send({ type: "MEDICAL_RESOLVE", payload: { outcome: "FIT_TO_CONTINUE" } })}>Fit</button>
+              <button className="secondary-button danger" disabled={!match.kumite.medical.active || match.kumite.medical.injuredSide !== side} onClick={() => send({ type: "MEDICAL_RESOLVE", payload: { outcome: "UNFIT_TEN_SECOND_RULE" } })}>10s Rule</button>
             </div>
           </div>
           <button
             className="winner-button"
-            onClick={() => confirmAction(`Confirm ${sideLabel(side)} winner?`, () => send({ type: "WINNER_CONFIRM", payload: { side, winType: match.kumite.suggestion?.reason || "manual" } }))}
+            disabled={Boolean(match.kumite.decision?.confirmable) && confirmableWinner !== side}
+            onClick={() => confirmAction(`Confirm ${sideLabel(side)} winner?`, () => send({
+              type: "WINNER_CONFIRM",
+              payload: {
+                side,
+                winType: match.kumite.decision?.winType || "MANUAL",
+                reason: match.kumite.decision?.reasonText || "manual"
+              }
+            }))}
           >
             <Trophy /> Confirm {sideLabel(side)} winner
           </button>
@@ -2794,6 +3055,7 @@ function SideControl({ side, match, send, manual }: { side: Side; match: MatchSt
 }
 
 function TimerPanel({ match, remaining, send }: { match: MatchState; remaining: number; send: SendAction }) {
+  const liveBlocked = isLiveActionBlocked(match);
   return (
     <section className="control-panel">
       <div className="panel-heading strong">
@@ -2802,20 +3064,20 @@ function TimerPanel({ match, remaining, send }: { match: MatchState; remaining: 
       </div>
       <div className={cx("control-clock", remaining <= 15000 && remaining > 0 && "warning")}>{formatMs(remaining)}</div>
       <div className="two-grid">
-        <button className="primary-button" onClick={() => send({ type: match.timer.running ? "TIMER_STOP" : "TIMER_START" })}>
+        <button className="primary-button" disabled={liveBlocked} onClick={() => send({ type: match.timer.running ? "TIMER_STOP" : "TIMER_START" })}>
           {match.timer.running ? <Pause /> : <Play />}
           {match.timer.running ? "Stop" : "Start"}
         </button>
-        <button className="secondary-button" onClick={() => send({ type: "TIMER_RESET" })}><RefreshCcw /> Reset</button>
+        <button className="secondary-button" disabled={liveBlocked} onClick={() => send({ type: "TIMER_RESET" })}><RefreshCcw /> Reset</button>
       </div>
       <div className="mini-grid">
-        <button className="secondary-button" onClick={() => send({ type: "TIMER_ADJUST", payload: { deltaMs: -1000 } })}>-1s</button>
-        <button className="secondary-button" onClick={() => send({ type: "TIMER_ADJUST", payload: { deltaMs: 1000 } })}>+1s</button>
-        <button className="secondary-button" onClick={() => send({ type: "TIMER_ADJUST", payload: { deltaMs: 10000 } })}>+10s</button>
+        <button className="secondary-button" disabled={liveBlocked} onClick={() => send({ type: "TIMER_ADJUST", payload: { deltaMs: -1000 } })}>-1s</button>
+        <button className="secondary-button" disabled={liveBlocked} onClick={() => send({ type: "TIMER_ADJUST", payload: { deltaMs: 1000 } })}>+1s</button>
+        <button className="secondary-button" disabled={liveBlocked} onClick={() => send({ type: "TIMER_ADJUST", payload: { deltaMs: 10000 } })}>+10s</button>
       </div>
       <div className="mini-grid">
         {[90, 120, 180].map((seconds) => (
-          <button key={seconds} className="secondary-button" onClick={() => send({ type: "TIMER_SET_DURATION", payload: { durationMs: durationFromPreset(seconds) } })}>
+          <button key={seconds} className="secondary-button" disabled={liveBlocked} onClick={() => send({ type: "TIMER_SET_DURATION", payload: { durationMs: durationFromPreset(seconds) } })}>
             {seconds / 60 >= 1.5 ? `${seconds / 60}m` : `${seconds}s`}
           </button>
         ))}
@@ -2847,24 +3109,71 @@ function MetaPanel({ match, send, manual }: { match: MatchState; send: SendActio
 }
 
 function KumiteFlow({ match, send }: { match: MatchState; send: SendAction }) {
-  const suggestion = match.kumite.suggestion;
+  const decision = match.kumite.decision;
+  const decisionText = decision ? winnerText(decision.side, decision.reasonText || decision.winType || undefined) : null;
+  const medicalDeadline = match.kumite.medical.deadlineAt;
+  const medicalRemaining = medicalDeadline ? Math.max(0, medicalDeadline - Date.now()) : 0;
+  const hikiwakeConfirmable = decision?.confirmable && decision.winType === "HIKIWAKE";
+  const liveBlocked = isLiveActionBlocked(match);
   return (
     <section className="control-panel">
       <div className="panel-heading strong">
         <span><Shield size={18} /> Kumite flow</span>
       </div>
       <div className="suggestion-box">
-        <strong>{suggestion ? winnerText(suggestion.side, suggestion.reason) : "No automatic winner suggestion"}</strong>
-        <span>Secretary still confirms after referee decision.</span>
+        <strong>{decisionText || "No backend decision yet"}</strong>
+        <span>{decision?.confirmable ? "Secretary confirms the frozen decision." : "Workflow stays live until backend freezes the bout."}</span>
+      </div>
+      <div className="control-block">
+        <label>Simultaneous exchange</label>
+        <div className="point-grid">
+          {POINTS.map((point) => (
+            <button
+              key={point.points}
+              className="secondary-button exchange-button"
+              disabled={liveBlocked}
+              onClick={() => send({
+                type: "SCORE_EXCHANGE",
+                payload: {
+                  exchangeId: `exchange-${Date.now()}`,
+                  akaPoints: point.points,
+                  aoPoints: point.points
+                }
+              })}
+            >
+              <ArrowLeftRight size={16} />
+              Both +{point.points}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="two-grid">
-        <button className={cx("secondary-button", match.kumite.hantei && "active")} onClick={() => send({ type: "SET_HANTEI", payload: { value: !match.kumite.hantei } })}>
-          <Flag /> Hantei
+        <button className="secondary-button" disabled={match.status !== "hantei"} onClick={() => send({ type: "HANTEI_DECISION", payload: { side: "aka" } })}>
+          <Flag /> Hantei AKA
+        </button>
+        <button className="secondary-button" disabled={match.status !== "hantei"} onClick={() => send({ type: "HANTEI_DECISION", payload: { side: "ao" } })}>
+          <Flag /> Hantei AO
+        </button>
+      </div>
+      <button
+        className="winner-button"
+        disabled={!hikiwakeConfirmable}
+        onClick={() => confirmAction("Confirm Hikiwake?", () => send({
+          type: "DRAW_CONFIRM",
+          payload: { reason: decision?.reasonText || "HIKIWAKE" }
+        }))}
+      >
+        <Shield /> Confirm Hikiwake
+      </button>
+      <div className="two-grid">
+        <button className="secondary-button" disabled={!["hantei", "hikiwake", "result_pending_confirmation"].includes(match.status)} onClick={() => send({ type: "RESUME_REVIEW" })}>
+          <RotateCcw /> Resume Review
         </button>
         <button className="secondary-button danger" disabled title="Reset match is not supported by backend v1">
           <RotateCcw /> Reset match
         </button>
       </div>
+      {match.kumite.medical.active ? <div className="small-chip gold">Medical {medicalRemaining > 0 ? formatMs(medicalRemaining) : "0:00"}</div> : null}
     </section>
   );
 }
@@ -3057,6 +3366,49 @@ function ToggleButton({ active, danger, label, onClick }: { active: boolean; dan
   );
 }
 
+function isLiveActionBlocked(match: MatchState) {
+  return ["hantei", "hikiwake", "result_pending_confirmation"].includes(match.status)
+    || anyVideoReviewActive(match)
+    || match.kumite.medical.active;
+}
+
+function anyVideoReviewActive(match: MatchState) {
+  return SIDES.some((side) => match.kumite.vr[side].active);
+}
+
+function penaltyLevelShort(level: string) {
+  switch (level) {
+    case "CHUI_1":
+      return "C1";
+    case "CHUI_2":
+      return "C2";
+    case "CHUI_3":
+      return "C3";
+    case "HANSOKU_CHUI":
+      return "HC";
+    case "HANSOKU":
+      return "H";
+    default:
+      return "-";
+  }
+}
+
+function penaltyReasonShort(reason: string) {
+  return reason
+    .replace("AVOIDING_COMBAT", "AVOID")
+    .replace("EXCESSIVE_CONTACT", "CONTACT")
+    .replace("WAKARETE_VIOLATION", "WAK")
+    .replace("REFEREE_ORDER_VIOLATION", "ORDER");
+}
+
+function medicalSummary(match: MatchState, now: number) {
+  if (!match.kumite.medical.active || !match.kumite.medical.injuredSide) {
+    return match.kumite.medical.lastOutcome ? `Medical ${match.kumite.medical.lastOutcome}` : null;
+  }
+  const remaining = match.kumite.medical.deadlineAt ? Math.max(0, match.kumite.medical.deadlineAt - now) : 0;
+  return `Medical ${sideLabel(match.kumite.medical.injuredSide)} ${formatMs(remaining)}`;
+}
+
 function ConnectionPill({ connected, latency }: { connected: boolean; latency?: number | null }) {
   return (
     <span className={cx("connection-pill", connected ? "online" : "offline")}>
@@ -3069,6 +3421,8 @@ function ConnectionPill({ connected, latency }: { connected: boolean; latency?: 
 function vrSummary(match: MatchState) {
   const active = SIDES.find((side) => match.kumite.vr[side].active);
   if (active) return `VR ${sideLabel(active)}`;
+  const accepted = SIDES.find((side) => match.kumite.vr[side].result === "accepted");
+  if (accepted) return `${sideLabel(accepted)} VR accepted`;
   const denied = SIDES.find((side) => match.kumite.vr[side].result === "denied");
   if (denied) return `${sideLabel(denied)} VR used`;
   return null;

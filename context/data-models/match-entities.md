@@ -2,13 +2,14 @@
 name: match-entities
 description: Entity schema for Match, KumiteMatchState, MatchParticipant, KataVote, MatchScoreEvent, MatchAuditEvent, Tatami
 type: data-model
-version: "1.0"
-last_updated: "2026-06-11"
+version: "1.2"
+last_updated: "2026-07-01"
 metadata:
   owner: backend
 source_references:
   - { file_path: karate-tournament-backend/src/main/java/com/karate/tournament/entity/Match.java }
   - { file_path: karate-tournament-backend/src/main/java/com/karate/tournament/entity/KumiteMatchState.java }
+  - { file_path: karate-tournament-backend/src/main/java/com/karate/tournament/service/TeamKumiteResolutionService.java }
 knowledge_graph_refs:
   - { community: "tournament-operations", hub_node: "Match" }
 related_context_files:
@@ -43,23 +44,36 @@ related_context_files:
 | `winnerNextSide` | Side | Yes | — | AKA or AO in the next match |
 | `loserNextMatch` | Match | Yes | — | FK EAGER; repechage bronze destination |
 | `loserNextSide` | Side | Yes | — | |
+| `teamMatchGroupId` | UUID | Yes | — | Groups multiple TEAM_KUMITE bout matches into one aggregate team match |
+| `teamBoutOrder` | Integer | Yes | — | Bout order within `teamMatchGroupId`; extra bout uses the next order |
+| `teamExtraBout` | boolean | No | false | True for Article 12.5 extra bout / tie-break bout |
 
-**MatchStatus**: `SCHEDULED, READY, RUNNING, PAUSED, REVIEW, HANTEI, VOTING, COMPLETED, LOCKED, CANCELLED`
-**WinType**: `IPPON, SHIDO, HANTEI, KIKEN, SHIKKAKU, FUSEN, HANSOKU, DISQUALIFIED, MANUAL, BYE`
+**MatchStatus**: `SCHEDULED, READY, RUNNING, PAUSED, REVIEW, HANTEI, HIKIWAKE, RESULT_PENDING_CONFIRMATION, VOTING, COMPLETED, LOCKED, CANCELLED`
+**WinType**: `POINTS, EIGHT_POINT_LEAD, TIME_UP, SENSHU, HANTEI, HIKIWAKE, KIKEN, HANSOKU, SHIKKAKU, TEN_SECOND_RULE, DISQUALIFICATION, KATA_VOTES, BYE, MANUAL`
 **Side**: `AKA, AO`
 **CategoryDiscipline**: `KUMITE, KATA, PARA_KATA, TEAM_KUMITE, TEAM_KATA`
 
 **Status transition flow**:
 ```
-SCHEDULED → READY (when 2 participants present)
-READY → RUNNING (on first score/timer event)
-RUNNING → PAUSED (TIMER_STOP)
-RUNNING → HANTEI (tie detected by KumiteRuleEngine)
-RUNNING → VOTING (kata vote submitted)
-Any → LOCKED (confirmResult() called)
+SCHEDULED → READY (when 2 participants are present)
+READY/PAUSED → RUNNING (timer start or first live action)
+RUNNING/PAUSED/REVIEW → HANTEI (time-up tie with no senshu holder)
+RUNNING/PAUSED/REVIEW → RESULT_PENDING_CONFIRMATION (backend terminal decision exists)
+HANTEI/RESULT_PENDING_CONFIRMATION → REVIEW (explicit reopen)
+Any live state → LOCKED (confirmResult())
 ```
 
-**Known issue**: No guard on STATUS_CHANGE event — any status can be forced. See [known-issues/patterns.md Pattern 2].
+**Guardrail note**: `STATUS_CHANGE` is now bounded by an explicit transition matrix. `HANTEI`, `HIKIWAKE`, and `RESULT_PENDING_CONFIRMATION` are frozen states, not generic live statuses.
+
+`HIKIWAKE` is used for round-robin / pool and team regular bouts that remain tied after score, `SENSHU`, IPPON, and WAZA-ARI tie-breakers. Individual elimination and team extra bouts still use `HANTEI` for the same unresolved time-up state.
+
+**TEAM_KUMITE aggregate model**: There is no active `Team` JPA entity in the current backend source. Team category entries are represented by `Entry.teamId`, `Entry.teamName`, and `Entry.teamMemberAthleteIds`; `MatchParticipant.entry` points at that team entry. `Match.teamMatchGroupId` is the aggregate boundary for multiple regular bout `Match` rows belonging to one team-vs-team match. `TeamKumiteResolutionService` reads all matches in the group and applies WKF 2026 Article 12.5 after each grouped bout is locked:
+- more regular bout victories wins the aggregate
+- tied bout victories fall back to regular-bout total points
+- tied victories and points require an extra bout; backend creates a `TEAM_KUMITE` match with `teamExtraBout=true`
+- the extra bout resolves by normal Kumite logic, including `HANTEI` when score / `SENSHU` cannot separate the sides
+
+For grouped TEAM_KUMITE bouts, individual bout confirmation does not advance the bracket by itself. Advancement, tournament points, and medals run once when the aggregate resolves.
 
 ---
 
@@ -75,18 +89,49 @@ Any → LOCKED (confirmResult() called)
 | `match` | Match | No | — | @OneToOne @MapsId @JoinColumn(match_id) |
 | `akaScore` | int | No | 0 | Red corner score |
 | `aoScore` | int | No | 0 | Blue corner score |
-| `akaSenshu` | boolean | No | false | AKA first-point flag |
-| `aoSenshu` | boolean | No | false | AO first-point flag |
-| `akaChui` | int | No | 0 | Warning count (0–3) |
-| `aoChui` | int | No | 0 | Warning count (0–3) |
-| `akaHansokuChui` | boolean | No | false | Serious warning flag |
+| `akaSenshu` | boolean | No | false | Legacy compatibility flag, derived from `senshuHolder` |
+| `aoSenshu` | boolean | No | false | Legacy compatibility flag, derived from `senshuHolder` |
+| `akaChui` | int | No | 0 | Legacy compatibility value derived from canonical penalty ladders |
+| `aoChui` | int | No | 0 | Legacy compatibility value derived from canonical penalty ladders |
+| `akaHansokuChui` | boolean | No | false | Legacy compatibility flag derived from canonical penalty ladders |
 | `aoHansokuChui` | boolean | No | false | |
-| `akaHansoku` | boolean | No | false | Disqualification flag |
+| `akaHansoku` | boolean | No | false | Direct terminal flag or derived ladder terminal |
 | `aoHansoku` | boolean | No | false | |
-| `akaShikkaku` | boolean | No | false | Expulsion flag |
+| `akaShikkaku` | boolean | No | false | Direct expulsion flag |
 | `aoShikkaku` | boolean | No | false | |
-| `akaKiken` | boolean | No | false | Withdrawal flag |
+| `akaKiken` | boolean | No | false | Direct withdrawal flag |
 | `aoKiken` | boolean | No | false | |
+| `akaPenaltyLevel` | KumitePenaltyLevel | No | `NONE` | Canonical WKF 2026 single penalty ladder |
+| `aoPenaltyLevel` | KumitePenaltyLevel | No | `NONE` | |
+| `akaPenaltyReasonCode` | String(80) | Yes | — | Controlled reason code for the latest ladder state |
+| `aoPenaltyReasonCode` | String(80) | Yes | — | |
+| `akaCategory1Penalty` | KumitePenaltyLevel | No | `NONE` | Legacy compatibility value derived from `akaPenaltyLevel` |
+| `aoCategory1Penalty` | KumitePenaltyLevel | No | `NONE` | |
+| `akaCategory2Penalty` | KumitePenaltyLevel | No | `NONE` | Legacy compatibility value, always `NONE` for canonical WKF 2026 flow |
+| `aoCategory2Penalty` | KumitePenaltyLevel | No | `NONE` | |
+| `senshuHolder` | Side | Yes | — | Canonical `SENSHU` holder |
+| `senshuAwardedAt` | Instant | Yes | — | |
+| `senshuRevoked` | boolean | No | false | |
+| `senshuRevokedAt` | Instant | Yes | — | |
+| `senshuRevocationReasonCode` | String(80) | Yes | — | |
+| `senshuReawardBlocked` | boolean | No | false | Set when senshu is revoked in the last 15 seconds |
+| `videoReviewStatus` | VideoReviewStatus | No | `IDLE` | One active VR workflow at a time |
+| `videoReviewActiveSide` | Side | Yes | — | Requesting side while VR is open |
+| `akaVideoReviewCardAvailable` | boolean | No | true | |
+| `aoVideoReviewCardAvailable` | boolean | No | true | |
+| `videoReviewLastResolution` | VideoReviewResolution | Yes | — | |
+| `medicalStatus` | MedicalStatus | No | `IDLE` | |
+| `medicalInjuredSide` | Side | Yes | — | |
+| `medicalStartedAt` | Instant | Yes | — | |
+| `medicalDeadlineAt` | Instant | Yes | — | Backend-owned countdown deadline |
+| `medicalLastOutcome` | MedicalOutcome | Yes | — | |
+| `decisionWinnerSide` | Side | Yes | — | Backend-owned winner decision |
+| `decisionWinType` | WinType | Yes | — | |
+| `decisionReasonCode` | String(80) | Yes | — | |
+| `decisionReasonText` | String(255) | Yes | — | |
+| `decisionFrozen` | boolean | No | false | |
+| `decisionConfirmable` | boolean | No | false | |
+| `lastLiveStatus` | MatchStatus | Yes | — | Last resumable live status before `REVIEW` / freeze |
 | `durationMs` | int | No | 180000 | Configured match duration in ms (3 min) |
 | `remainingMs` | int | No | 180000 | Time left; decremented on TIMER_STOP |
 | `timerRunning` | boolean | No | false | |
@@ -94,6 +139,17 @@ Any → LOCKED (confirmResult() called)
 | `updatedAt` | Instant | No | — | @PrePersist @PreUpdate |
 
 Created by draw algorithm for every KUMITE/TEAM_KUMITE match. Not created for KATA matches.
+
+For `WinType.HIKIWAKE`, `decisionWinnerSide`, `Match.winnerEntry`, and `Match.winnerAthlete` remain null. The match is still locked after confirmation, but winner/loser bracket advancement and winner-based points/medals are skipped.
+
+**Canonical enums introduced for kumite flow**
+- `KumitePenaltyLevel`: `NONE, CHUI_1, CHUI_2, CHUI_3, HANSOKU_CHUI, HANSOKU`
+- `KumitePenaltyReasonCode`: `JOGAI, MUBOBI, PASSIVITY, AVOIDING_COMBAT, EXCESSIVE_CONTACT, GRABBING, WAKARETE_VIOLATION, REFEREE_ORDER_VIOLATION`
+- `KumitePenaltyCategory`: `CATEGORY_1, CATEGORY_2` (legacy request/response compatibility only)
+- `VideoReviewStatus`: `IDLE, REQUESTED`
+- `VideoReviewResolution`: `DENIED, AWARD_SCORE, TORIMASEN, REVOKE_SENSHU, MIENAI, TECHNICAL_PROBLEM`
+- `MedicalStatus`: `IDLE, ACTIVE`
+- `MedicalOutcome`: `FIT_TO_CONTINUE, UNFIT_TEN_SECOND_RULE, CANCELLED`
 
 ---
 
@@ -106,7 +162,7 @@ Created by draw algorithm for every KUMITE/TEAM_KUMITE match. Not created for KA
 | `match` | Match | No | FK EAGER |
 | `entry` | Entry | No | FK EAGER |
 | `side` | Side | No | AKA or AO |
-| `team` | [NEEDS HUMAN INPUT] | — | Team entity if TEAM_KUMITE |
+| `team` | Derived from Entry | — | No active Team entity; TEAM_KUMITE uses `entry.teamId` / `teamName` |
 
 Unique constraint: `(match_id, side)` — one participant per side per match.
 Created by draw algorithm; updated by `advanceWinner()` / `advanceLoser()` after confirmResult.
@@ -138,14 +194,16 @@ Event log for every scoring action. Append-only — never soft-deleted.
 |-------|------|----------|-------|
 | `match` | Match | No | FK |
 | `actorUserId` | UUID | Yes | Who performed the action |
-| `type` | ScoreEventType | No | `SCORE_DELTA, PENALTY, SENSHU, TIMER_START, TIMER_STOP, TIMER_SET, KATA_VOTE, STATUS_CHANGE, RESULT_CONFIRMED` |
+| `type` | ScoreEventType | No | `TIMER_START, TIMER_STOP, TIMER_SET, SCORE_DELTA, SCORE_EXCHANGE, PENALTY, SENSHU, SENSHU_REVOKE, VIDEO_REVIEW_REQUEST, VIDEO_REVIEW_RESOLVE, MEDICAL_START, MEDICAL_RESOLVE, HANTEI_DECISION, VR, KATA_VOTE, KATA_REVEAL, STATUS_CHANGE, RESULT_CONFIRMED, MANUAL_CORRECTION` |
 | `side` | Side | Yes | AKA or AO |
 | `points` | Integer | Yes | For SCORE_DELTA |
-| `penaltyCode` | String | Yes | For PENALTY |
+| `penaltyCode` | String | Yes | Legacy PENALTY compatibility only |
 | `judgeNumber` | Integer | Yes | For KATA_VOTE |
 | `voteSide` | Side | Yes | For KATA_VOTE |
-| `payloadJson` | String | Yes | Extra arbitrary payload |
+| `payloadJson` | String | Yes | Extra payload / audit detail for events that need it. For `SCORE_EXCHANGE`, stores atomic exchange deltas such as `akaPoints`, `aoPoints`, and `exchangeId`. For `VIDEO_REVIEW_REQUEST` / `VIDEO_REVIEW_RESOLVE`, stores backend-structured audit metadata including request side, resolution, card kept/consumed, and optional reason fields. |
 | `occurredAt` | Instant | No | Event timestamp |
+
+Penalty / VR / medical explicit fields now live in `MatchEventRequest` and are copied into BE state transitions; `payloadJson` is no longer the primary request contract for those workflows, but is exposed in recent events for audit.
 
 ---
 
@@ -175,7 +233,7 @@ Event log for every scoring action. Append-only — never soft-deleted.
 | `status` | TatamiStatus | No | — | `ACTIVE, INACTIVE` |
 
 Unique constraint: `(tournament_id, tatami_no)`.
-`GET /api/tatamis/{id}/current-match` returns the current RUNNING match on this tatami (204 if none).
+`GET /api/tatamis/{id}/current-match` returns the current live tatami match. After result confirmation, `tatami.currentMatch` is cleared and the endpoint returns `204` until the next ready/live match is promoted.
 
 ---
 
