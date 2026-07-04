@@ -21,18 +21,24 @@
 | {{test/guard}} | ok | ok | ok | ok | SHIPS |
 | {{test/guard}} | ok | ⚠️ {{note}} | ok | ok | DOWNGRADED to documented-only |
 
-## 4. Findings (things the harness surfaced, NOT silently fixed)
+## 4. Promotion candidates (warn → block)
+
+| Rule | Shipped as | Why not block yet | Promote when |
+|------|-----------|-------------------|--------------|
+| {{INV-0XX}} | warn | {{e.g. doc-sourced, unconfirmed}} | {{e.g. 2 weeks soak, zero false positives + your sign-off}} |
+
+## 5. Findings (things the harness surfaced, NOT silently fixed)
 
 - {{e.g. INV-003 fails against current code — current behavior may be a live bug.}}
 
-## 5. What you (human) must do
+## 6. What you (human) must do
 
 - [ ] Review every rule above; resolve section 2.
 - [ ] Enable branch protection on `{{DEFAULT_BRANCH}}`: require harness gates + CODEOWNERS review.
 - [ ] Confirm CODEOWNERS entries name the right humans.
 - [ ] Run `scripts/harness/install-hooks.sh` locally (and tell the team to).
 
-## 6. What was deliberately NOT done
+## 7. What was deliberately NOT done
 
 - Not merged; not self-approved; no existing rules/thresholds modified or weakened
 - {{anything else skipped, with reason}}

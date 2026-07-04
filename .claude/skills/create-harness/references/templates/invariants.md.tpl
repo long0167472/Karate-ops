@@ -4,10 +4,10 @@
 > Changes to this file require human review (see CODEOWNERS).
 > Source tags: [HUMAN] confirmed by a person · [DOC:path] from a document · [AI-INFERRED] unconfirmed.
 
-| ID | Rule (testable statement) | Why (consequence if violated) | Source | Tier | Enforcer | Red evidence |
-|----|---------------------------|-------------------------------|--------|------|----------|--------------|
-| INV-001 | {{e.g. Server computes all billing amounts; client payloads must not set them}} | {{e.g. wrong charges to real users}} | [HUMAN] | 3 | {{path/to/TestClass#method}} | {{date: broke X, test failed with Y}} |
-| INV-002 | | | | | | |
+| ID | Rule (testable statement) | Why (consequence if violated) | Source | Tier | Severity | Enforcer | Red evidence |
+|----|---------------------------|-------------------------------|--------|------|----------|----------|--------------|
+| INV-001 | {{e.g. Server computes all billing amounts; client payloads must not set them}} | {{e.g. wrong charges to real users}} | [HUMAN] | 3 | block | {{path/to/TestClass#method}} | {{date: broke X, test failed with Y}} |
+| INV-002 | | | | | warn | | |
 
 ## Unconfirmed rules ([AI-INFERRED] — awaiting human decision)
 

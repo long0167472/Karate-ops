@@ -24,7 +24,12 @@ concrete, not generic.
 ## Round 3 — Enforcement posture
 
 5. **"Who must approve changes to the harness itself?"** → CODEOWNERS entries.
-6. **"Is there code that is explicitly OUT of scope for hard gates?"**
+6. **"Which of these rules should BLOCK merges starting today?"**
+   Present the doc-sourced/inferred candidates; anything not selected ships as `warn`
+   (reported, non-blocking) per the SKILL.md severity policy. This is the single most
+   important approval question — it is a decision, not a knowledge test, so the human can
+   answer it even when they can't recall the rules themselves.
+7. **"Is there code that is explicitly OUT of scope for hard gates?"**
    (prototypes, spikes, generated code) → exclusion list, so the harness doesn't rot into
    something people bypass wholesale.
 

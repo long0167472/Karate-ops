@@ -19,12 +19,21 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # guards diff against the base branch
       - name: Run static guards (same scripts as local hooks — CI mirror)
+        # Severity by filename: block-*.sh fails the gate; warn-*.sh reports only.
         run: |
           set -e
-          for g in scripts/harness/*.sh; do
-            echo "── $g"
-            bash "$g"
+          failed=0
+          for g in scripts/harness/block-*.sh; do
+            [ -e "$g" ] || continue
+            echo "── $g (block)"
+            bash "$g" || failed=1
           done
+          for g in scripts/harness/warn-*.sh; do
+            [ -e "$g" ] || continue
+            echo "── $g (warn)"
+            bash "$g" || echo "::warning::$g reported a violation (warn severity — not blocking)"
+          done
+          exit $failed
 
   gate-2-compile:
     needs: gate-1-static-guards

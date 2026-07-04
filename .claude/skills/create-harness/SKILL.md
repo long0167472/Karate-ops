@@ -106,6 +106,9 @@ positives — promotion is itself a human decision.
 
 - Tier-1 guards → `scripts/harness/*.sh` (template: `references/templates/static-guard.sh.tpl`).
   Each script: exit 0 = pass, exit 1 = fail with a message naming the rule ID.
+  **Severity is encoded in the filename**: `block-<rule>.sh` fails the gate; `warn-<rule>.sh`
+  is reported but never fails the gate (the CI loop treats the two prefixes differently —
+  see harness.yml.tpl). This is how warn-severity rules from the Phase 2 policy actually run.
 - Tier-3 tests → the project's native test tree, under a `harness/` package/dir so they are
   identifiable and lockable. Use the project's existing test framework and conventions.
 - Wire everything into CI (template: `references/templates/harness.yml.tpl`) as fail-fast
@@ -134,9 +137,12 @@ Special cases (define them, don't improvise):
   naturally red — run it, capture the red output, and record evidence as
   `red-by-construction (awaiting implementation)`. That counts. What does NOT count is
   skipping the run.
-- **Static guards on protected paths**: sabotage = an uncommitted scratch change to a
-  protected file (or a throwaway branch), run the guard, capture, then `git checkout --`
-  the change. Verify `git status` is clean afterwards before proceeding.
+- **Static guards — match the sabotage to what the guard reads.** Content guards (grep over
+  the working tree) can be sabotaged with an uncommitted scratch edit, reverted with
+  `git checkout --`. Diff-based guards compare `BASE_REF...HEAD` — an uncommitted change is
+  INVISIBLE to them and produces a fake-green proof. Sabotage those with a real commit on a
+  throwaway branch, run the guard there, then delete the branch. Either way, verify
+  `git status` is clean and you are back on the working branch before proceeding.
 - **Cannot sabotage safely** (e.g. rule about prod-only infra): mark UNPROVEN with the
   reason. Never fabricate evidence.
 
@@ -146,9 +152,12 @@ Install the anti-cheating layer:
 
 - `CODEOWNERS` entry locking `.harness/`, `scripts/harness/`, the harness test dirs, and the
   CI workflow to human reviewers (template: `references/templates/CODEOWNERS.tpl`).
-- CI checks that `--no-verify` / skip-ci markers are not used and that harness paths were not
-  modified without the required review (branch protection note in the summary — you cannot
-  set branch protection yourself; tell the human to).
+- Local bypasses (`--no-verify`, deleted hooks) leave no trace CI can detect — do NOT try to
+  build a check for them. The actual defense is the CI mirror: CI re-runs the same scripts,
+  so bypassing local hooks changes nothing. What CI *can* detect: `[skip ci]` markers in
+  commit messages (fail the harness-integrity gate on them) and modifications to harness
+  paths (flag for CODEOWNERS review). Branch protection must be set by the human — say so
+  in the summary; you cannot set it yourself.
 - Coverage gate config if the project has coverage tooling; never lower an existing threshold.
 
 **Self-audit (mandatory before handoff):** walk EVERY enforcer you produced through the

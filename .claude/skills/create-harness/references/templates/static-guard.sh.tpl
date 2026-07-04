@@ -2,6 +2,8 @@
 # {{RULE_ID}}: {{one-line statement of the rule}}
 # Tier 1 static guard. Runs identically in local hooks and CI (CI mirror).
 # Exit 0 = pass, exit 1 = violation. Always name the rule ID in the failure message.
+# FILENAME ENCODES SEVERITY: name this file block-<rule>.sh (fails the gate) or
+# warn-<rule>.sh (reported, non-blocking). The CI loop dispatches on the prefix.
 set -euo pipefail
 
 BASE_REF="${BASE_REF:-origin/{{DEFAULT_BRANCH}}}"

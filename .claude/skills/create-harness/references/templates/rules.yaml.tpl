@@ -4,10 +4,12 @@ project: "{{PROJECT}}"
 rules:
   - id: INV-001
     statement: "{{testable statement}}"
-    source: human            # human | doc | ai-inferred
+    source: human            # human | doc | doc-stale | ai-inferred
     tier: 3                  # 1 static | 2 compile | 3 test | 4 human
     enforcer: "{{path/to/test-or-script}}"
-    severity: block
+    severity: block          # block | warn — see SKILL.md severity policy for what each
+                             # source may ship at; tier-1 severity is encoded in the script
+                             # filename prefix (block-*.sh / warn-*.sh)
     red_evidence: "{{date + what was sabotaged + observed failure}}"
 meta:
   ci_workflow: ".github/workflows/harness.yml"
