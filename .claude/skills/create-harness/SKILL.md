@@ -34,7 +34,22 @@ as explicit human decisions.
    reading the implementation, you don't have a rule — you have a snapshot. Flag it instead
    of writing it. See `references/anti-patterns.md` for the full rejection list.
 
-## Process (5 phases, in order)
+## Process (6 phases, in order)
+
+### Phase 0 — Detect what already exists (idempotency)
+
+Before anything else, check for `.harness/`, `scripts/harness/`, harness CI workflows, and
+harness-named test dirs. Two modes:
+
+- **Greenfield** (nothing found): run all phases.
+- **Existing harness found**: switch to GAP-ANALYSIS mode. Read the existing ledger, list
+  which rules lack enforcers / red evidence / CI wiring, and propose ADDITIONS only. You may
+  not modify or delete existing rules, guards, or thresholds (law 3) — if an existing rule
+  looks wrong, report it in the summary as a finding for the human.
+
+Also detect: default branch, CI system (GitHub Actions / GitLab / other), test frameworks,
+coverage tooling. If the CI system is not GitHub Actions, keep the gate ORDER from the
+template and translate the syntax — the structure is the contract, not the YAML dialect.
 
 ### Phase 1 — Interview (do NOT skip, do NOT guess)
 
@@ -77,6 +92,15 @@ Also write `.harness/rules.yaml` (machine-readable map rule → enforcer → sev
 - Wire everything into CI (template: `references/templates/harness.yml.tpl`) as fail-fast
   gates: static → compile → tests → coverage. Local hooks and CI must run the SAME scripts
   (CI-mirror rule): never implement a check twice.
+- **Wire the local side of the mirror too** — CI alone means the agent/dev only learns about
+  violations after a push. Install BOTH that apply:
+  - a git `pre-push` hook (or `pre-commit` for tier-1 only) that loops over
+    `scripts/harness/*.sh` — commit it as `scripts/harness/install-hooks.sh` so it is
+    opt-in and versioned, don't write into `.git/` directly;
+  - if the project uses Claude Code, a `PreToolUse`/`PostToolUse` hook in
+    `.claude/settings.json` invoking the same scripts for edits touching guarded paths.
+  Local hooks are convenience; CI is authority. A check that exists only locally counts as
+  NOT enforced (anti-pattern #7).
 
 ### Phase 4 — Red-first proof
 
@@ -84,6 +108,18 @@ For each guard/test: sabotage → run → capture the failing output → revert 
 again green. Record a one-line evidence entry (what was broken, what went red) per rule in
 `.harness/invariants.md`. A rule without red evidence must be listed under "UNPROVEN" in the
 final summary.
+
+Special cases (define them, don't improvise):
+
+- **Greenfield / code not written yet**: a test written before the implementation is
+  naturally red — run it, capture the red output, and record evidence as
+  `red-by-construction (awaiting implementation)`. That counts. What does NOT count is
+  skipping the run.
+- **Static guards on protected paths**: sabotage = an uncommitted scratch change to a
+  protected file (or a throwaway branch), run the guard, capture, then `git checkout --`
+  the change. Verify `git status` is clean afterwards before proceeding.
+- **Cannot sabotage safely** (e.g. rule about prod-only infra): mark UNPROVEN with the
+  reason. Never fabricate evidence.
 
 ### Phase 5 — Meta-rules + handoff
 
@@ -96,12 +132,18 @@ Install the anti-cheating layer:
   set branch protection yourself; tell the human to).
 - Coverage gate config if the project has coverage tooling; never lower an existing threshold.
 
-Then STOP and hand off. Final summary must contain:
+**Self-audit (mandatory before handoff):** walk EVERY enforcer you produced through the
+8 rejection patterns in `references/anti-patterns.md` and record the verdict per enforcer.
+Any enforcer that trips a pattern gets fixed or downgraded to "documented only" — it does
+not ship as protection. Include the audit table in the handoff.
+
+Then STOP and hand off using `references/templates/handoff.md.tpl`. It must contain:
 
 1. Table of rules: ID · statement · source tag · tier · red evidence (or UNPROVEN).
 2. Explicit list of every `[AI-INFERRED]` rule awaiting confirmation.
-3. What the human must do: review checklist, enable branch protection, confirm CODEOWNERS.
-4. What you deliberately did NOT do (merge, self-approve, weaken existing rules).
+3. Self-audit table (enforcer × anti-pattern verdict).
+4. What the human must do: review checklist, enable branch protection, confirm CODEOWNERS.
+5. What you deliberately did NOT do (merge, self-approve, weaken existing rules).
 
 ## Scope discipline
 

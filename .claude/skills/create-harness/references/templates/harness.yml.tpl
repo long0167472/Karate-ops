@@ -1,6 +1,10 @@
 # .github/workflows/harness.yml — fail-fast gate chain.
 # Gate order: cheap → expensive. A red gate stops the chain.
 # Adapt job steps to the project's real toolchain; keep the structure.
+#
+# PLACEHOLDER RULE: only double-brace tokens WITHOUT a dollar sign ({{LIKE_THIS}}) are
+# placeholders to substitute. Tokens written as ${{ ... }} are live GitHub Actions
+# expressions — leave them exactly as-is.
 name: harness
 
 on:

@@ -14,15 +14,12 @@ BASE_REF="${BASE_REF:-origin/{{DEFAULT_BRANCH}}}"
 # fi
 
 # ── Example B: forbid modifying protected files (diff-based) ──────────
-# changed=$(git diff --name-only "$BASE_REF"...HEAD)
-# if echo "$changed" | grep -E '{{PROTECTED_PATH_REGEX}}'; then
-#   # allow ADDING new files, block MODIFYING existing ones:
-#   modified=$(git diff --diff-filter=MD --name-only "$BASE_REF"...HEAD | grep -E '{{PROTECTED_PATH_REGEX}}' || true)
-#   if [ -n "$modified" ]; then
-#     echo "❌ {{RULE_ID}} violated: protected files modified:" >&2
-#     echo "$modified" >&2
-#     exit 1
-#   fi
+# Allows ADDING new files; blocks MODIFYING or DELETING existing ones (--diff-filter=MD).
+# modified=$(git diff --diff-filter=MD --name-only "$BASE_REF"...HEAD | grep -E '{{PROTECTED_PATH_REGEX}}' || true)
+# if [ -n "$modified" ]; then
+#   echo "❌ {{RULE_ID}} violated: protected files modified:" >&2
+#   echo "$modified" >&2
+#   exit 1
 # fi
 
 echo "✅ {{RULE_ID}} pass"
