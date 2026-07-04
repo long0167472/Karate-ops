@@ -1,9 +1,11 @@
 # Recon Playbook — mining an unfamiliar codebase for candidate invariants
 
 Use when onboarding a codebase you know nothing about. Recon produces HYPOTHESES with
-evidence, never truth: everything found here is `[AI-INFERRED]` until a human confirms it.
-Recon upgrades the Phase 1 interview from open questions to evidence-backed confirmation
-("I found X in commit Y — is this a hard rule?"). It never replaces the interview.
+evidence, never truth: findings are tagged `[DOC:path]` (curated docs, staleness-checked)
+or `[AI-INFERRED]` (mined from code/history) — see the trust hierarchy below for what each
+tag may ship at without a human. Recon upgrades the Phase 1 interview from open questions
+to evidence-backed confirmation ("I found X in commit Y — is this a hard rule?"). It never
+replaces the interview.
 
 Time-box the whole pass; depth-first on the risk surfaces, not breadth-first on everything.
 
@@ -38,7 +40,7 @@ Grep for the vocabulary of catastrophe; every hit area is a candidate tier-3 inv
 
 For each cluster: who computes the value, who is trusted, what happens on bypass.
 
-## Vein 2 — Git history = the scar record (highest-value vein)
+## Vein 2 — Git history = the scar record (highest-value CODE vein)
 
 Past bugs are PROVEN failure modes — the strongest invariant candidates that exist:
 
