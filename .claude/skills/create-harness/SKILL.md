@@ -61,9 +61,14 @@ AskUserQuestion (batch them; 2–4 questions per call). Minimum you must obtain:
 - What are the architectural boundaries / ownership rules?
 - What bugs have already happened (or are feared) that a gate should have caught?
 
-Also mine existing sources yourself before asking, so questions are informed, not lazy:
-`CLAUDE.md` / `AGENTS.md`, `context/` or docs dirs, ADRs, known-issues files, CI configs,
-existing tests. Everything you mine is still `[AI-INFERRED]` until the human confirms it.
+Before asking, do reconnaissance yourself so questions are evidence-backed, not lazy.
+For an unfamiliar/onboarding codebase, run the full `references/recon-playbook.md`
+(money/authz surfaces, git bug-fix history, schema constraints, existing tests, hotspots)
+and bring its hypothesis table to the interview — ask "I found X in commit Y, is this a
+hard rule?" instead of "what are your rules?". For any codebase, at minimum read
+`CLAUDE.md`/`AGENTS.md`, `context/` or docs dirs, ADRs, known-issues files, CI configs,
+existing tests. Everything you mine is still `[AI-INFERRED]` (or `[DOC:path]`) until the
+human confirms it — recon sharpens the interview, it never replaces it.
 
 ### Phase 2 — Rule ledger
 
