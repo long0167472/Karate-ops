@@ -1,98 +1,51 @@
-# /create-harness Skill — Current Status
+# /create-harness Skill — Status Log
 
-**Last updated:** 2026-07-04 (Commit 6d9c679)  
-**Lines of code:** 610 (core logic + templates)  
-**Maturity level:** Beta — ready for trial run, 5 hardening iterations complete  
-**Test mode:** Phase 0 (idempotency) through Phase 5 (handoff) structurally sound; Phases 4–5 not yet exercised against real projects
+**Last updated:** 2026-07-04 · **Maturity:** Beta — structure hardened over 6 review
+iterations; Phases 4–5 not yet exercised end-to-end against a real project.
 
-## Architecture
+> Anti-rot rule for this file: no per-file line counts or other numbers that decay with
+> every edit (`wc -l` when you need them). Log decisions, defects, and limits only.
 
-```
-.claude/skills/create-harness/
-├── SKILL.md                      [176 lines] Core 6-phase process + 6 non-negotiable laws
-├── STATUS.md                     [this file] Skill state & readiness
-└── references/
-    ├── anti-patterns.md          [54 lines] 9 rejection patterns (vacuous, mirror, flaky, etc)
-    ├── interview-questions.md    [36 lines] 7 interview rounds (evidence-backed, risk-first)
-    ├── recon-playbook.md         [98 lines] 5 veins for mining unfamiliar codebases
-    └── templates/
-        ├── invariants.md.tpl     [27 lines] Rule ledger template (ID, rule, source tag, severity)
-        ├── rules.yaml.tpl        [20 lines] Machine-readable rule map
-        ├── harness.yml.tpl       [68 lines] CI gate chain (static → compile → test → coverage)
-        ├── static-guard.sh.tpl   [28 lines] Tier-1 guard scaffold (block-*/warn-* prefixes)
-        ├── CODEOWNERS.tpl        [19 lines] Harness lock (last-match-wins warning)
-        └── handoff.md.tpl        [47 lines] Approval request template (7 sections)
-```
+## Contents (roles, not line counts)
 
-## Key Design Decisions (WHY)
+- `SKILL.md` — 6 non-negotiable laws + 6-phase process (detect → interview → ledger →
+  enforcers → red-proof → meta/handoff)
+- `references/anti-patterns.md` — 9 rejection patterns: vacuous, mirror, frozen bug,
+  happy-path stuffing, overmocked, weakening-as-fixing, local-only, flaky gate,
+  natural-language-only
+- `references/interview-questions.md` — 7 questions in 3 rounds (catastrophe map,
+  boundaries & history, enforcement posture incl. the block-merge promotion decision)
+- `references/recon-playbook.md` — 6 veins: context base (0, mine first), money/authz
+  surface (1), git scar record (2, fresh-clone check), schema (3), tests (4), hotspots (5)
+- `references/templates/` — invariants ledger, rules.yaml, harness.yml CI gate chain,
+  static-guard.sh (block-*/warn-* dispatch), CODEOWNERS (last-match-wins warning),
+  handoff approval doc
 
-| Decision | Rationale | Proven? |
-|----------|-----------|---------|
-| **6 phases** | Idempotency + interview + ledger + enforcement + red-proof + meta-rules | ✅ Phase 0 (gap-analysis mode) + Phases 1–3 structure sound; 4–5 awaiting real use |
-| **Severity by filename** (`block-*.sh` / `warn-*.sh`) | CI dispatch without doubling code; silently-skipped guards caught by lint | ✅ Executable proof (gate loop tested red/green) |
-| **No [AI-INFERRED] rules can ship at `block`** | Prevents AI from encoding bugs as protected rules; soak → promotion path for confidence | ⚠️ Awaiting human confirmation in real use |
-| **Vein 0 (context base) before Veins 1–5** | Distilled docs > interview > code mining; staleness-check gates trust | ✅ Applied to KarateOps, found `context/known-issues/` immediately |
-| **Red-first proof mandatory** | Tests that never fail prove nothing; execution catches vacuous/flaky/mirror patterns | ✅ Loop iter 4 proven; awaiting tier-3 test proof |
-| **Ledger + source tags** | Separates knowledge (what is a rule) from approval (does it block); decouples human bandwidth | ⚠️ Awaiting real handoff |
+## Hardening log
 
-## Hardening Log (5 iterations)
+| Iter | Defect found | Class |
+|------|--------------|-------|
+| 1 | CI "detects --no-verify" was impossible; `warn` severity had no runtime mechanism | wrong model / dead policy |
+| 2 | CODEOWNERS last-match-wins silently voids harness locks; hook config unlocked | silent bypass |
+| 3 | No flaky-gate anti-pattern; no post-handoff accretion rules | trust erosion / lifecycle gap |
+| 4 | Unprefixed guards silently skipped (found by EXECUTING the gate loop, not reading it) | silent skip |
+| 5 | Fresh clone ⇒ empty scar record ⇒ "no past bugs" false conclusion (found by dry-running recon on this repo) | env blind spot |
+| 6 | STATUS.md itself shipped stale counts, an 8-of-9 list, wrong round count | doc rot |
 
-| Iter | Finding | Fix | Severity |
-|------|---------|-----|----------|
-| 1 | CI can't detect `--no-verify` (local flag) | Rewrote: CI mirror re-running same scripts IS the defense | 🔴 Breaking (wrong model) |
-| 2 | CODEOWNERS last-match-wins silently overrides harness locks | Template warning + lock `.claude/settings.json` too | 🔴 Breaking (silent hole) |
-| 3 | Flaky gates train everyone to disbelieve harness | Added anti-pattern #8, 3× stability run before shipping | 🟠 High (trust erosion) |
-| 4 | Unprefixed guards silently skipped in CI | Added lint: `find ... ! -name 'block-*' ! -name 'warn-*'` | 🔴 Breaking (silent failure) |
-| 5 | Fresh clone has no git history (Claude Code web sessions) | Vein 2: check `rev-list --count`, unshallow or downgrade | 🟠 High (wrong conclusions) |
+Method lesson: iterations 1–3 came from critical re-reading; 4–6 from executing/dry-running
+the artifacts. Execution finds strictly better defects — prefer it.
 
-**Defect rate:** 5 finds / 5 iterations = stable (each find is distinct, no repeat categories).
+## Known limitations (open)
 
-## Known limitations
+1. Phase 4 red-proof unproven against a real test framework (only shell guards exercised).
+2. Phase 5 handoff → human sign-off → soak → warn-to-block promotion flow never run.
+3. Vein 4 assumes tests exist; zero-test projects get no explicit "empty vein" guidance.
+4. Branch protection depends on the human enabling it; no follow-up check if they forget.
+5. No "coverage tooling absent" path — Phase 5 just skips coverage silently.
 
-1. **Phase 4 (red-first) not tested against real test frameworks** — guidance says "use framework conventions" but only shell scaffolds are proven. Will need example Java/Node tests from KarateOps trial run.
+## Next step
 
-2. **Phase 5 handoff checklist is unopened** — no human has yet said "yes, I'll sign off on these rules" and triggered the soak→promote flow. The path exists, behavior TBD.
-
-3. **Vein 4 (existing tests) surface coverage unknown** — skill assumes project has tests; greenfield projects with zero tests will find Vein 4 empty and incorrectly assume "no gaps to fill."
-
-4. **Meta-rule about GitHub branch protection** — skill says "you must enable it; I cannot" — but the handoff should call out what happens if the human forgets (PR merges without harness review). Needs a follow-up check step in the human's weekly routine.
-
-5. **Coverage gate (Phase 5)** — template assumes coverage tooling exists; projects with none will skip this. No explicit "no coverage tool detected" path in the instructions.
-
-## Trial run checklist (next step)
-
-When `/create-harness` runs on KarateOps:
-
-- [ ] **Phase 0 idempotency** — no `.harness/` exists; detects this, runs greenfield mode
-- [ ] **Recon Vein 0** — mines `context/`, finds `known-issues/billing-cycle-leak.md` as `[DOC]` sourced
-- [ ] **Recon Veins 1–5** — surfaces `billing/amount`, `permission/organizationId`, soft-delete rule, hotspot `MatchServiceImpl`
-- [ ] **Interview round 3** — asks "which rules block-merge?" for promotion decision
-- [ ] **Phase 2 ledger** — 6 Critical Rules from CLAUDE.md lands as [DOC:path] + [AI-INFERRED] mix
-- [ ] **Phase 3 guards** — produces `block-no-migration-edit.sh`, `block-no-physical-delete.sh`, maybe `warn-publish-check.sh`
-- [ ] **Phase 3 tests** — scaffolds invariant test classes (doesn't implement, just names them)
-- [ ] **Phase 4 red-proof** — guides through sabotaging one guard/test, capturing the red output
-- [ ] **Phase 5 handoff** — produces `.harness/invariants.md` with a promotion table + checklist
-- [ ] **No auto-merge** — skill produces a draft PR, human must approve
-
-## Readiness assessment
-
-**Core skill:** ✅ Ready  
-- Process is sound (6 phases, fail-safe defaults, single point of human decision)
-- Anti-patterns are real (9 types, each with detection method)
-- Recon veins are prioritized (context base first, fresh-clone edge case handled)
-
-**Templates:** ✅ Ready  
-- All syntactically valid (bash-n passed, YAML parses, Markdown renders)
-- Demonstrated mechanics (gate loop tested red/green, lint catches silent holes)
-- Documented gotchas (CODEOWNERS last-match-wins, guard filename dispatch)
-
-**Documentation:** ⚠️ Adequate  
-- Clear for an expert reading soup-to-nuts
-- May need run-along example for first-timer (no walkthrough of actual output)
-
-**Execution (the skill running):** ⚠️ Not yet tested  
-- Phase 1 interview logic not exercised (AskUserQuestion calls, parsing answers)
-- Phase 4 red-proof GIT mechanics (commit/revert on throwaway branch) not proven
-- Phase 5 handoff file writes not traced
-
-**Next:** Run `/create-harness` on KarateOps → expose what's left unsaid, iterate on feedback.
+Trial run `/create-harness` on KarateOps (greenfield mode — no `.harness/` exists yet):
+recon should surface the 6 Critical Rules from CLAUDE.md via Vein 0
+(`context/known-issues/billing-cycle-leak.md` etc.); the run must stop at Phase 5 with a
+handoff doc, an unmerged draft, and the block-merge question answered by a human.
