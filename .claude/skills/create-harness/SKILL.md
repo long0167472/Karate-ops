@@ -161,7 +161,7 @@ Install the anti-cheating layer:
 - Coverage gate config if the project has coverage tooling; never lower an existing threshold.
 
 **Self-audit (mandatory before handoff):** walk EVERY enforcer you produced through the
-8 rejection patterns in `references/anti-patterns.md` and record the verdict per enforcer.
+9 rejection patterns in `references/anti-patterns.md` and record the verdict per enforcer.
 Any enforcer that trips a pattern gets fixed or downgraded to "documented only" — it does
 not ship as protection. Include the audit table in the handoff.
 
@@ -182,3 +182,15 @@ Then STOP and hand off using `references/templates/handoff.md.tpl`. It must cont
   patch production code or water down the test.
 - Never edit anything under an existing `.harness/` or `scripts/harness/` except to ADD;
   modifications require the human path.
+
+## After handoff — the harness is sediment, not a monument
+
+Creation is one-time; accretion is forever. The handoff must tell the team (and future
+agents) the two standing rules that keep the harness alive:
+
+- **Every production bug → one regression rule.** Before (or with) the fix, add a ledger
+  entry + enforcer that would have caught it, red-proofed against the unfixed code. A bug
+  without a rule will return.
+- **Every new feature with a Vein-1 surface (money/authz/destruction/irreversibility) →
+  its invariant lands with the feature**, not later. Re-running `/create-harness` performs
+  gap-analysis (Phase 0) when drift is suspected.

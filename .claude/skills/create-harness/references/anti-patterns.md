@@ -38,7 +38,14 @@ are: fix the code, or get a human to change the rule.
 A check that exists only in a git hook or only in the editor. Anything not mirrored in CI
 does not exist — agents (and humans) can delete local hooks.
 
-## 8. Natural-language-only rule
+## 8. Flaky gate
+A gate that sometimes fails for reasons unrelated to the rule (real time, network, test
+order, shared state, race conditions) trains everyone — humans and agents — to re-run on
+red and stop believing the harness. One flaky blocker poisons trust in every gate.
+**Detector:** run each new enforcer 3× before shipping; any nondeterminism → fix the test
+(inject clock, stub network, isolate state) or ship it as `warn` until proven stable.
+
+## 9. Natural-language-only rule
 A rule that lives only in CLAUDE.md/context docs with no executable enforcer, presented as
 "covered". Context is advice; the harness is enforcement. A rule without an enforcer belongs
 in the ledger with enforcement tier "NONE — documented only", visibly.
