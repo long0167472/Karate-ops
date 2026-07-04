@@ -18,6 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # guards diff against the base branch
+      - name: Reject unprefixed guards (they would be silently skipped)
+        run: |
+          stray=$(find scripts/harness -maxdepth 1 -name '*.sh' ! -name 'block-*' ! -name 'warn-*' ! -name 'install-hooks.sh')
+          if [ -n "$stray" ]; then
+            echo "❌ Guard scripts must be named block-*.sh or warn-*.sh (severity dispatch):" >&2
+            echo "$stray" >&2
+            exit 1
+          fi
       - name: Run static guards (same scripts as local hooks — CI mirror)
         # Severity by filename: block-*.sh fails the gate; warn-*.sh reports only.
         run: |
