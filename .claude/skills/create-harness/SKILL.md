@@ -88,6 +88,20 @@ Assign each rule the **cheapest tier that can catch it**:
 
 Also write `.harness/rules.yaml` (machine-readable map rule → enforcer → severity).
 
+**Severity policy — what may ship without a human.** Human confirmation is an *approval
+decision* ("this rule now blocks merges"), not a knowledge test — often the knowledge lives
+in the curated context base and the human cannot answer better than the docs. So:
+
+| Source tag | Max severity without human sign-off |
+|------------|-------------------------------------|
+| `[HUMAN]` | `block` |
+| `[DOC:path]` (staleness-checked) | `block` only if the doc states it as a hard rule verbatim; otherwise `warn` |
+| `[DOC — possibly stale]` / `[AI-INFERRED]` | `warn` |
+
+`warn`-severity rules run in CI and report, but don't block. Note in the handoff which
+`warn` rules are candidates for promotion to `block` after a soak period with no false
+positives — promotion is itself a human decision.
+
 ### Phase 3 — Build enforcers
 
 - Tier-1 guards → `scripts/harness/*.sh` (template: `references/templates/static-guard.sh.tpl`).

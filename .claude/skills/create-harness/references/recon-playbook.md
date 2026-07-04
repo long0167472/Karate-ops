@@ -7,7 +7,27 @@ Recon upgrades the Phase 1 interview from open questions to evidence-backed conf
 
 Time-box the whole pass; depth-first on the risk surfaces, not breadth-first on everything.
 
-## Vein 1 — Money & authority surface (always first)
+## Vein 0 — The curated context base (best source; mine FIRST)
+
+If the project practices context/compound engineering (`context/` dirs, `CLAUDE.md`/
+`AGENTS.md`, ADRs, known-issues files, wiki indexes), start there: these are **distilled
+human answers written down while memory was fresh** — higher quality than a live interview.
+Known-issues/post-mortem files are the richest single source: each documented incident is a
+proven failure mode with its rule already articulated.
+
+Two cautions before trusting a context file:
+
+- **Staleness check** — context drifts from code. Verify:
+  `git log --oneline --since='<context file last_updated>' -- <source files it describes>`
+  If sources changed after the doc, mark the hypothesis `[DOC:path — possibly stale]`.
+- **Advisory phrasing** — context is written for human understanding, not as testable
+  statements. Rewrite each rule into a falsifiable form before it enters the ledger; if it
+  can't be made falsifiable, it stays documentation, not an enforcer.
+
+A rich Vein 0 shrinks the interview: ask only what the context base does NOT answer, plus
+the promotion decision (see SKILL.md severity policy).
+
+## Vein 1 — Money & authority surface (always first among code veins)
 
 Grep for the vocabulary of catastrophe; every hit area is a candidate tier-3 invariant:
 
@@ -50,9 +70,11 @@ git log --format= --name-only --since='1 year ago' | sort | uniq -c | sort -rn |
 
 Most-churned files × Vein-1 surfaces = where the first invariant tests belong.
 
-## Also read (cheap, do first): README, CLAUDE.md/AGENTS.md, docs/, ADRs, context/ dirs,
-CI configs, known-issues files. Treat as `[DOC:path]` sourced — stronger than inference,
-still weaker than `[HUMAN]`.
+## Source trust hierarchy
+
+`[HUMAN]` (live confirmation) > `[DOC:path]` (curated context, staleness-checked) >
+`[DOC:path — possibly stale]` > `[AI-INFERRED]` (pattern-mined from code/history).
+The tag determines what severity a rule may ship at without human sign-off (SKILL.md).
 
 ## Output of recon
 
