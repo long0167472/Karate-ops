@@ -45,12 +45,26 @@ For each cluster: who computes the value, who is trusted, what happens on bypass
 Past bugs are PROVEN failure modes — the strongest invariant candidates that exist:
 
 ```bash
-git log --oneline --grep='fix\|bug\|hotfix\|revert' -i --since='2 years ago' | head -50
+git log --oneline --grep='fix\|bug\|hotfix\|revert' -i | head -50   # no --since: don't miss old scars
 git show <hash> --stat        # what did the fix touch?
 ```
 
 Each recurring fix theme → one candidate regression invariant, cite the commit hash as
 evidence. A bug fixed twice is a rule screaming to be enforced.
+
+**FIRST verify the history is actually there.** Fresh clones (every Claude Code web session
+starts as one), shallow clones, and squash-merge repos may show almost no history — the scar
+record is truncated, not empty.
+
+```bash
+git rev-list --count HEAD    # a handful on a "mature" project ⇒ history is truncated
+git rev-parse --is-shallow-repository
+```
+
+If truncated: `git fetch --unshallow` when the network allows; otherwise DOWNGRADE this
+vein and lean on Vein 0 (context/known-issues) and the issue tracker for the scar record.
+Never conclude "this project has no past bugs" from a thin `git log` — that is a clone
+artifact, not a fact about the code.
 
 ## Vein 3 — Schema & migrations = half-encoded invariants
 
